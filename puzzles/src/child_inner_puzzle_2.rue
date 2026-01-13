@@ -1,0 +1,10 @@
+// Second child inner puzzle - different from child_inner_puzzle to get unique hash
+// This puzzle type will be used by action 2
+export fn main() -> Any {
+    [
+        // REMARK condition to differentiate from child_inner_puzzle
+        [1, "child_type_2"],
+        // Melt the singleton (this is a special singleton condition)
+        [51, 0, -113]
+    ]
+}

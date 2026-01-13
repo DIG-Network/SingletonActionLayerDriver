@@ -4,8 +4,10 @@ export const SINGLETON_LAUNCHER_HASH: Bytes32 = 0xeff07522495060c066f66f32acc2a7
 export const SINGLETON_MOD_HASH: Bytes32 = 0x7faa3253bfddd1e0decb0906b2dc6247bbc4cf608f58345d173adb63e8b47c9f;
 
 export fn curry_singleton_hash(launcher_id: Bytes32, inner_puzzle_hash: Bytes32) -> Bytes32 {
-    // singleton_struct = (SINGLETON_MOD_HASH launcher_id SINGLETON_LAUNCHER_HASH)
-    let singleton_struct_hash = tree_hash([SINGLETON_MOD_HASH, launcher_id, SINGLETON_LAUNCHER_HASH]);
+    // singleton_struct = (SINGLETON_MOD_HASH . (launcher_id . SINGLETON_LAUNCHER_HASH))
+    // Note: This is a cons pair, NOT a list! The SDK uses #[clvm(rest)] on launcher_puzzle_hash
+    // which makes it (a . (b . c)) instead of (a . (b . (c . nil)))
+    let singleton_struct_hash = tree_hash((SINGLETON_MOD_HASH, (launcher_id, SINGLETON_LAUNCHER_HASH)));
     curry_tree_hash(SINGLETON_MOD_HASH, [
         singleton_struct_hash,
         inner_puzzle_hash,

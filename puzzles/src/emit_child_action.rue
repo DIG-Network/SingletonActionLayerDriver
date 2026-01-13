@@ -10,34 +10,40 @@
 //   - Asserts the launcher's announcement (ensures launcher is spent correctly)
 //   - Increments the counter in persistent state
 //
-// The Rust driver must spend the launcher coin in the same bundle.
-//
-// Solution structure: (my_singleton_coin_id . child_singleton_puzzle_hash)
+// Curried: child_inner_puzzle_hash - determines what inner puzzle the child singletons get
+// Solution structure: (my_singleton_coin_id . ()) - just needs the parent coin ID
 // Persistent state structure: (counter . marker)
 
-import constants::SINGLETON_LAUNCHER_HASH;
+import constants::{SINGLETON_LAUNCHER_HASH, curry_singleton_hash};
 
 // Type definitions for structured destructuring
-// Persistent state = (counter . marker) - two u64 fields
 type Persistent = (Int, Int);
-// State = (ephemeral . persistent)
 type State = (Any, Persistent);
-// Solution = (my_coin_id . child_puzzle_hash)
-type Solution = (Bytes32, Bytes32);
+// Solution now just contains the coin ID - child puzzle hash comes from currying
+type Solution = (Bytes32, Any);
 
-export fn main(state: State, action_solution: Solution) -> Any {
+export fn main(
+    // Curried: the inner puzzle hash for child singletons
+    child_inner_puzzle_hash: Bytes32,
+    // From action layer: (ephemeral . persistent)
+    state: State,
+    // Solution: (my_singleton_coin_id . _)
+    action_solution: Solution,
+) -> Any {
     // Destructure state: (ephemeral . (counter . marker))
     let (ephemeral, persistent) = state;
     let (counter, marker) = persistent;
 
-    // Destructure solution: (my_coin_id . child_puzzle_hash)
-    let (my_singleton_coin_id, child_singleton_puzzle_hash) = action_solution;
+    // Get coin ID from solution
+    let (my_singleton_coin_id, _rest) = action_solution;
 
     // Compute the child launcher ID (parent=my_coin, puzzle=launcher, amount=0)
     let child_launcher_id = coinid(my_singleton_coin_id, SINGLETON_LAUNCHER_HASH, 0);
 
+    // Compute the child singleton's full puzzle hash using the curried inner puzzle hash
+    let child_singleton_puzzle_hash = curry_singleton_hash(child_launcher_id, child_inner_puzzle_hash);
+
     // The launcher announcement message: tree_hash([child_singleton_puzzle_hash, 1, nil])
-    // This is what the launcher announces when creating a singleton
     let launcher_message = tree_hash([child_singleton_puzzle_hash, 1, nil]);
 
     // Build conditions
@@ -58,6 +64,5 @@ export fn main(state: State, action_solution: Solution) -> Any {
     let new_persistent: Persistent = (new_counter, marker);
 
     // Return ((new_ephemeral . new_persistent) . conditions)
-    // Keep ephemeral unchanged
     ((ephemeral, new_persistent), conditions)
 }

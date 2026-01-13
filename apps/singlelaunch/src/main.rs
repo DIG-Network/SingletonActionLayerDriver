@@ -63,6 +63,10 @@ const TEST_ACTION_HEX: &str = include_str!("../../../puzzles/output/test_action.
 /// This is the inner puzzle used for child singletons (just melts).
 const CHILD_PUZZLE_HEX: &str = include_str!("../../../puzzles/output/child_inner_puzzle.clvm.hex");
 
+/// The compiled child_inner_puzzle_2.rue
+/// Second child inner puzzle (different from child_inner_puzzle to get unique hash)
+const CHILD_PUZZLE_2_HEX: &str = include_str!("../../../puzzles/output/child_inner_puzzle_2.clvm.hex");
+
 /// Singleton launcher puzzle hash (standard)
 const SINGLETON_LAUNCHER_PUZZLE_HASH: [u8; 32] = hex_literal::hex!(
     "eff07522495060c066f66f32acc2a77e3a3e737aca8baea4d1a64ea4cdc13da9"
@@ -105,6 +109,10 @@ fn get_child_puzzle_bytes() -> Vec<u8> {
     hex::decode(CHILD_PUZZLE_HEX.trim()).expect("valid hex in child_inner_puzzle.clvm.hex")
 }
 
+fn get_child_puzzle_2_bytes() -> Vec<u8> {
+    hex::decode(CHILD_PUZZLE_2_HEX.trim()).expect("valid hex in child_inner_puzzle_2.clvm.hex")
+}
+
 fn emit_child_action_mod_hash() -> TreeHash {
     let puzzle_bytes = get_emit_child_action_bytes();
     let mut allocator = Allocator::new();
@@ -117,6 +125,36 @@ fn child_inner_puzzle_hash() -> TreeHash {
     let mut allocator = Allocator::new();
     let puzzle_ptr = node_from_bytes(&mut allocator, &puzzle_bytes).expect("valid puzzle");
     chia::clvm_utils::tree_hash(&allocator, puzzle_ptr)
+}
+
+fn child_inner_puzzle_2_hash() -> TreeHash {
+    let puzzle_bytes = get_child_puzzle_2_bytes();
+    let mut allocator = Allocator::new();
+    let puzzle_ptr = node_from_bytes(&mut allocator, &puzzle_bytes).expect("valid puzzle");
+    chia::clvm_utils::tree_hash(&allocator, puzzle_ptr)
+}
+
+/// Curried emit_child_action args
+#[derive(Debug, Clone, ToClvm, FromClvm)]
+#[clvm(curry)]
+pub struct EmitChildActionCurriedArgs {
+    pub child_inner_puzzle_hash: Bytes32,
+}
+
+impl EmitChildActionCurriedArgs {
+    /// Compute the curried puzzle hash for these args
+    pub fn curry_tree_hash(mod_hash: TreeHash, child_inner_puzzle_hash: Bytes32) -> TreeHash {
+        use clvm_utils::CurriedProgram;
+        CurriedProgram {
+            program: mod_hash,
+            args: EmitChildActionCurriedArgs { child_inner_puzzle_hash },
+        }.tree_hash()
+    }
+}
+
+/// Compute the curried emit_child_action puzzle hash for a given child inner puzzle hash
+fn emit_child_action_curried_hash(child_inner_puzzle_hash: Bytes32) -> TreeHash {
+    EmitChildActionCurriedArgs::curry_tree_hash(emit_child_action_mod_hash(), child_inner_puzzle_hash)
 }
 
 /// Compute the emit_child_action puzzle hash (uncurried mod hash)
@@ -135,6 +173,29 @@ fn build_emit_child_action_puzzle(ctx: &mut SpendContext) -> anyhow::Result<Node
         .map_err(|e| anyhow::anyhow!("Failed to load emit_child_action: {:?}", e))
 }
 
+/// Build curried emit_child_action puzzle for a given child inner puzzle hash
+fn build_curried_emit_child_action_puzzle(
+    ctx: &mut SpendContext,
+    child_inner_hash: Bytes32,
+) -> anyhow::Result<NodePtr> {
+    let puzzle_bytes = get_emit_child_action_bytes();
+    let mod_hash = emit_child_action_mod_hash();
+
+    // Load the uncurried module
+    let mod_ptr = ctx.puzzle(mod_hash, &puzzle_bytes)
+        .map_err(|e| anyhow::anyhow!("Failed to load emit_child_action: {:?}", e))?;
+
+    // Curry with child_inner_puzzle_hash
+    let curried_args = EmitChildActionCurriedArgs {
+        child_inner_puzzle_hash: child_inner_hash,
+    };
+
+    ctx.alloc(&CurriedProgram {
+        program: mod_ptr,
+        args: curried_args,
+    }).map_err(|e| anyhow::anyhow!("Failed to curry emit_child_action: {:?}", e))
+}
+
 /// Create an ActionLayer for the singleton with emit_child action
 /// Uses TestState for proper cons cell structure
 /// Returns the action layer and the action puzzle hash for the merkle tree
@@ -150,6 +211,61 @@ fn create_emit_child_action_layer(hint: Bytes32, initial_state: TestState) -> (A
     );
 
     (action_layer, action_hash)
+}
+
+/// Create an ActionLayer with TWO emit_child actions (curried with different child inner puzzles)
+/// Returns (action_layer, action1_hash, action2_hash)
+fn create_two_action_layer(
+    hint: Bytes32,
+    initial_state: TestState,
+    child_inner_1: Bytes32,
+    child_inner_2: Bytes32,
+) -> (ActionLayer<TestState>, Bytes32, Bytes32) {
+    let action1_hash: Bytes32 = emit_child_action_curried_hash(child_inner_1).into();
+    let action2_hash: Bytes32 = emit_child_action_curried_hash(child_inner_2).into();
+    let action_hashes = vec![action1_hash, action2_hash];
+
+    let finalizer = Finalizer::Default { hint };
+    let action_layer = ActionLayer::from_action_puzzle_hashes(
+        &action_hashes,
+        initial_state,
+        finalizer,
+    );
+
+    (action_layer, action1_hash, action2_hash)
+}
+
+/// Compute the action layer inner puzzle hash for two curried emit_child actions
+fn compute_two_action_layer_inner_hash(
+    hint: Bytes32,
+    state: TestState,
+    child_inner_1: Bytes32,
+    child_inner_2: Bytes32,
+) -> TreeHash {
+    use chia_wallet_sdk::types::puzzles::{ActionLayerArgs, DefaultFinalizer2ndCurryArgs};
+    use chia_wallet_sdk::types::MerkleTree;
+    use clvm_utils::ToTreeHash;
+
+    let action1_hash: Bytes32 = emit_child_action_curried_hash(child_inner_1).into();
+    let action2_hash: Bytes32 = emit_child_action_curried_hash(child_inner_2).into();
+    let action_hashes = vec![action1_hash, action2_hash];
+
+    // Build merkle tree to get root
+    let merkle_tree = MerkleTree::new(&action_hashes);
+    let merkle_root = merkle_tree.root();
+
+    // Compute finalizer hash (BOTH curry levels)
+    let finalizer_hash = DefaultFinalizer2ndCurryArgs::curry_tree_hash(hint);
+
+    // State hash
+    let state_hash = state.tree_hash();
+
+    // Compute action layer puzzle hash with state
+    ActionLayerArgs::<TreeHash, TreeHash>::curry_tree_hash(
+        finalizer_hash,
+        merkle_root,
+        state_hash,
+    )
 }
 
 /// State for testing action layer - mirrors CatalogRegistryState structure
@@ -383,6 +499,18 @@ enum Commands {
         #[arg(long, env = "SINGLELAUNCH_PASSWORD")]
         password: Option<String>,
     },
+
+    /// Test TWO emit child actions - creates singleton with 2 actions, spawns 2 children
+    TwoActions {
+        #[arg(long)]
+        testnet: bool,
+        #[arg(long, default_value = "default")]
+        wallet: String,
+        #[arg(long, default_value = "100000")]
+        fee: u64,
+        #[arg(long, env = "SINGLELAUNCH_PASSWORD")]
+        password: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -467,6 +595,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::EmitChild { testnet, wallet, fee, password } => {
             test_emit_child_action(testnet, &wallet, fee, password).await?;
+        }
+        Commands::TwoActions { testnet, wallet, fee, password } => {
+            test_two_actions(testnet, &wallet, fee, password).await?;
         }
     }
 
@@ -2637,6 +2768,625 @@ async fn test_emit_child_action(testnet: bool, wallet_name: &str, fee: u64, pass
     println!("  Emit child action test: {}", style("PASSED").green().bold());
     println!();
     println!("Action layer successfully spawned a child singleton!");
+
+    Ok(())
+}
+
+/// Test TWO emit_child actions - creates singleton with merkle tree of 2 actions,
+/// then spends twice: first with action 1 to emit child 1, then with action 2 to emit child 2
+async fn test_two_actions(testnet: bool, wallet_name: &str, fee: u64, password: Option<String>) -> Result<()> {
+    use dialoguer::Password;
+    use chia_wallet_sdk::driver::ActionLayerSolution;
+
+    let singleton_amount: u64 = 1;
+    let child_singleton_amount: u64 = 1;
+
+    println!("{}", style("=== TEST TWO ACTIONS ===").cyan().bold());
+    println!("Network: {}", if testnet { "testnet" } else { "mainnet" });
+    println!("Pattern: Action Layer with TWO curried emit_child actions");
+    println!("         - Action 1: emits child with child_inner_puzzle");
+    println!("         - Action 2: emits child with child_inner_puzzle_2");
+    println!();
+
+    // Load wallet
+    let wallet_path = get_wallet_dir()?.join(format!("{}.wallet", wallet_name));
+    if !wallet_path.exists() {
+        return Err(Error::WalletNotFound(wallet_name.to_string()));
+    }
+
+    let passphrase = match password {
+        Some(p) => p,
+        None => Password::new()
+            .with_prompt("Enter wallet passphrase")
+            .interact()
+            .map_err(|e| Error::Config(e.to_string()))?,
+    };
+
+    let master_sk = load_encrypted_wallet(&wallet_path, &passphrase)?;
+
+    let derived_sk = master_sk
+        .derive_hardened(12381)
+        .derive_hardened(8444)
+        .derive_hardened(2)
+        .derive_unhardened(0);
+    let derived_pk = derived_sk.public_key();
+
+    let standard_layer = StandardLayer::new(derived_pk.clone());
+    let wallet_puzzle_hash: Bytes32 = standard_layer.tree_hash().into();
+
+    // Child inner puzzle hashes for the two actions
+    let child_inner_1: Bytes32 = child_inner_puzzle_hash().into();
+    let child_inner_2: Bytes32 = child_inner_puzzle_2_hash().into();
+
+    println!("  Child inner puzzle 1 hash: 0x{}", hex::encode(child_inner_1.to_bytes()));
+    println!("  Child inner puzzle 2 hash: 0x{}", hex::encode(child_inner_2.to_bytes()));
+
+    // Action puzzle hashes (curried)
+    let action1_hash: Bytes32 = emit_child_action_curried_hash(child_inner_1).into();
+    let action2_hash: Bytes32 = emit_child_action_curried_hash(child_inner_2).into();
+    println!("  Action 1 (curried) hash: 0x{}", hex::encode(action1_hash.to_bytes()));
+    println!("  Action 2 (curried) hash: 0x{}", hex::encode(action2_hash.to_bytes()));
+
+    // Initial state
+    let initial_state = TestState { counter: 1, marker: 0xDEADBEEF };
+    let action_layer_inner_hash = compute_two_action_layer_inner_hash(
+        wallet_puzzle_hash, initial_state, child_inner_1, child_inner_2
+    );
+    println!("  Action layer inner hash: 0x{}", hex::encode(action_layer_inner_hash.to_bytes()));
+
+    // Connect to network
+    let peer = connect_peer(testnet).await?;
+    let genesis = get_genesis_challenge(testnet);
+
+    // Get wallet coins
+    let puzzle_hash_tree = StandardArgs::curry_tree_hash(derived_pk.clone());
+    let puzzle_hash_dl = Bytes32::new(puzzle_hash_tree.to_bytes());
+
+    let coins = dl::get_all_unspent_coins(&peer, puzzle_hash_dl, None, genesis)
+        .await
+        .map_err(|e| Error::Network(format!("{:?}", e)))?;
+
+    if coins.coin_states.is_empty() {
+        return Err(Error::InsufficientFunds("No coins in wallet".to_string()));
+    }
+
+    // Need: singleton (1) + 2 child singletons (2) + 3 fees
+    let required = singleton_amount + child_singleton_amount * 2 + fee * 3;
+    let funding_coin_old = coins.coin_states.iter()
+        .find(|cs| cs.coin.amount >= required)
+        .map(|cs| &cs.coin)
+        .ok_or_else(|| Error::InsufficientFunds(format!("Need {} mojos", required)))?;
+
+    let funding_coin = Coin::new(
+        Bytes32::new(funding_coin_old.parent_coin_info.to_bytes()),
+        Bytes32::new(funding_coin_old.puzzle_hash.to_bytes()),
+        funding_coin_old.amount,
+    );
+
+    // =========================================================================
+    // STEP 1: Create singleton with TWO action layer actions
+    // =========================================================================
+    println!();
+    println!("{}", style("--- Step 1: Creating Singleton with TWO Actions ---").yellow().bold());
+
+    let ctx = &mut SpendContext::new();
+
+    let launcher = Launcher::new(funding_coin.coin_id(), singleton_amount);
+    let launcher_id = launcher.coin().coin_id();
+
+    println!("  Launcher ID: 0x{}", hex::encode(launcher_id.to_bytes()));
+
+    let inner_hash_bytes32: Bytes32 = action_layer_inner_hash.into();
+
+    let (launcher_conditions, singleton_coin) = launcher
+        .spend(ctx, inner_hash_bytes32, ())
+        .map_err(|e| Error::Transaction(format!("Launcher spend failed: {:?}", e)))?;
+
+    println!("  Singleton coin ID: 0x{}", hex::encode(singleton_coin.coin_id().to_bytes()));
+
+    // Build funding coin spend
+    let change_after_create = funding_coin.amount - singleton_amount - fee;
+    let mut conditions = launcher_conditions;
+
+    if change_after_create > 0 {
+        conditions = conditions.create_coin(wallet_puzzle_hash, change_after_create, chia::puzzles::Memos::None);
+    }
+    if fee > 0 {
+        conditions = conditions.reserve_fee(fee);
+    }
+
+    standard_layer.spend(ctx, funding_coin.clone(), conditions)
+        .map_err(|e| Error::Transaction(format!("Funding coin spend failed: {:?}", e)))?;
+
+    // Sign and broadcast creation
+    let coin_spends = ctx.take();
+    println!("  Signing {} coin spend(s)...", coin_spends.len());
+
+    let signature = sign_coin_spends(&coin_spends, &derived_sk, testnet)
+        .map_err(|e| Error::Transaction(format!("Signing failed: {:?}", e)))?;
+
+    let dl_spends = convert_spends_to_dl(&coin_spends);
+    let dl_sig = DLSignature::from_bytes(&signature.to_bytes())
+        .map_err(|_| Error::Transaction("Invalid signature bytes".to_string()))?;
+
+    let bundle = SpendBundle::new(dl_spends, dl_sig);
+
+    println!("  Broadcasting creation transaction...");
+    let result = dl::broadcast_spend_bundle(&peer, bundle)
+        .await
+        .map_err(|e| Error::Network(format!("{:?}", e)))?;
+
+    if result.status == 3 {
+        let err = result.error.unwrap_or_default();
+        return Err(Error::Transaction(format!("Broadcast failed: {}", err)));
+    }
+
+    // Wait for singleton confirmation
+    let singleton_puzzle_hash_dl = Bytes32::new(singleton_coin.puzzle_hash.to_bytes());
+    wait_for_coin_confirmation(
+        &peer,
+        singleton_puzzle_hash_dl,
+        singleton_coin.coin_id(),
+        genesis,
+        "Singleton",
+    ).await?;
+
+    println!("  {} Singleton created with 2 actions!", style("✓").green().bold());
+
+    // =========================================================================
+    // STEP 2: First spend - emit child 1 using action 1
+    // =========================================================================
+    println!();
+    println!("{}", style("--- Step 2: Emit Child 1 via Action 1 ---").yellow().bold());
+
+    let ctx = &mut SpendContext::new();
+
+    // Child 1 launcher coin
+    let child1_launcher_coin = Coin::new(
+        singleton_coin.coin_id(),
+        Bytes32::new(SINGLETON_LAUNCHER_PUZZLE_HASH),
+        0,
+    );
+    let child1_launcher_id = child1_launcher_coin.coin_id();
+    println!("  Child 1 launcher ID: 0x{}", hex::encode(child1_launcher_id.to_bytes()));
+
+    // Child 1 singleton puzzle hash
+    let child1_hash = child_inner_puzzle_hash();
+    let sdk_child1_singleton_hash: Bytes32 = SingletonArgs::curry_tree_hash(child1_launcher_id, child1_hash).into();
+    println!("  Child 1 singleton puzzle hash: 0x{}", hex::encode(sdk_child1_singleton_hash.to_bytes()));
+
+    // Create the ActionLayer for spending (with both actions)
+    let (action_layer, _, _) = create_two_action_layer(
+        wallet_puzzle_hash, initial_state, child_inner_1, child_inner_2
+    );
+
+    // Debug: Print merkle root (it's a field not a method)
+    println!("  DEBUG: Merkle root: 0x{}", hex::encode(action_layer.merkle_root.to_bytes()));
+
+    // Build the action layer inner puzzle
+    let inner_puzzle_ptr = action_layer.construct_puzzle(ctx)
+        .map_err(|e| Error::Transaction(format!("Failed to construct action layer puzzle: {:?}", e)))?;
+
+    // Debug: Compare inner puzzle hash with what we used at creation
+    {
+        let puzzle_bytes: Vec<u8> = ctx.serialize(&inner_puzzle_ptr).map_err(|e| Error::Transaction(format!("{:?}", e)))?.into();
+        let mut debug_alloc = Allocator::new();
+        let puzzle_ptr = node_from_bytes(&mut debug_alloc, &puzzle_bytes).expect("valid puzzle");
+        let actual_inner_hash = chia::clvm_utils::tree_hash(&debug_alloc, puzzle_ptr);
+        println!("  DEBUG: Expected inner hash: 0x{}", hex::encode(action_layer_inner_hash.to_bytes()));
+        println!("  DEBUG: Actual inner hash: 0x{}", hex::encode(actual_inner_hash.to_bytes()));
+        if actual_inner_hash.to_bytes() != action_layer_inner_hash.to_bytes() {
+            println!("  {} INNER HASH MISMATCH!", style("✗").red());
+        } else {
+            println!("  {} Inner hashes match!", style("✓").green());
+        }
+    }
+
+    // Build the curried emit_child action 1 puzzle
+    let emit_action1_puzzle = build_curried_emit_child_action_puzzle(ctx, child_inner_1)
+        .map_err(|e| Error::Transaction(format!("Failed to build curried action 1: {:?}", e)))?;
+
+    // Debug: Compare curried puzzle hash with what we used in merkle tree
+    {
+        let puzzle_bytes: Vec<u8> = ctx.serialize(&emit_action1_puzzle).map_err(|e| Error::Transaction(format!("{:?}", e)))?.into();
+        let mut debug_alloc = Allocator::new();
+        let puzzle_ptr = node_from_bytes(&mut debug_alloc, &puzzle_bytes).expect("valid puzzle");
+        let actual_hash = chia::clvm_utils::tree_hash(&debug_alloc, puzzle_ptr);
+        println!("  DEBUG: Expected action 1 hash: 0x{}", hex::encode(action1_hash.to_bytes()));
+        println!("  DEBUG: Actual curried puzzle hash: 0x{}", hex::encode(actual_hash.to_bytes()));
+        if actual_hash.to_bytes() != action1_hash.to_bytes() {
+            println!("  {} HASH MISMATCH!", style("✗").red());
+        } else {
+            println!("  {} Hashes match!", style("✓").green());
+        }
+    }
+
+    // Build the action solution
+    let emit_action1_solution = EmitChildActionSolution {
+        my_singleton_coin_id: singleton_coin.coin_id(),
+        child_singleton_puzzle_hash: sdk_child1_singleton_hash,
+    };
+    let emit_action1_solution_ptr = ctx.alloc(&emit_action1_solution)
+        .map_err(|e| Error::Transaction(format!("Failed to alloc action solution: {:?}", e)))?;
+
+    // Get merkle proof for action 1 directly from MerkleTree (not ActionLayer.get_proofs)
+    // ActionLayer.get_proofs doesn't return proper proofs for multi-action trees
+    use chia_wallet_sdk::types::MerkleTree;
+    let merkle_tree = MerkleTree::new(&[action1_hash, action2_hash]);
+    let proof1 = merkle_tree.proof(action1_hash)
+        .ok_or_else(|| Error::Transaction("Failed to get merkle proof for action 1".to_string()))?;
+
+    println!("  Merkle proof for action 1: path={}, siblings={}", proof1.path, proof1.proof.len());
+    for (i, sibling) in proof1.proof.iter().enumerate() {
+        println!("    Sibling {}: 0x{}", i, hex::encode(sibling.to_bytes()));
+    }
+
+    let proofs = vec![proof1];
+
+    // Build the action layer solution with only the action we're executing
+    let action_layer_solution = ActionLayerSolution {
+        proofs,
+        action_spends: vec![
+            Spend::new(emit_action1_puzzle, emit_action1_solution_ptr),
+        ],
+        finalizer_solution: clvmr::NodePtr::NIL,
+    };
+
+    let inner_solution = action_layer.construct_solution(ctx, action_layer_solution)
+        .map_err(|e| Error::Transaction(format!("Failed to construct action layer solution: {:?}", e)))?;
+
+    // Build singleton solution with eve proof
+    let eve_proof = Proof::Eve(EveProof {
+        parent_parent_coin_info: funding_coin.coin_id(),
+        parent_amount: singleton_amount,
+    });
+
+    let singleton_solution = build_singleton_solution(ctx, eve_proof, singleton_coin.amount, inner_solution)
+        .map_err(|e| Error::Transaction(format!("Failed to build singleton solution: {:?}", e)))?;
+
+    let singleton_puzzle = build_singleton_puzzle(ctx, launcher_id, inner_puzzle_ptr)
+        .map_err(|e| Error::Transaction(format!("Failed to build singleton puzzle: {:?}", e)))?;
+
+    // Test the action layer (inner puzzle) locally first
+    println!("  Testing action layer (inner puzzle) locally...");
+    {
+        let inner_puzzle_bytes: Vec<u8> = ctx.serialize(&inner_puzzle_ptr).map_err(|e| Error::Transaction(format!("{:?}", e)))?.into();
+        let inner_solution_bytes: Vec<u8> = ctx.serialize(&inner_solution).map_err(|e| Error::Transaction(format!("{:?}", e)))?.into();
+
+        let mut test_alloc = Allocator::new();
+        let inner_puzzle_test = node_from_bytes(&mut test_alloc, &inner_puzzle_bytes).expect("valid puzzle");
+        let inner_solution_test = node_from_bytes(&mut test_alloc, &inner_solution_bytes).expect("valid solution");
+
+        match clvmr::run_program(
+            &mut test_alloc,
+            &clvmr::ChiaDialect::new(0),
+            inner_puzzle_test,
+            inner_solution_test,
+            11_000_000_000,
+        ) {
+            Ok(reduction) => {
+                println!("    {} Action layer puzzle OK! cost={}", style("✓").green(), reduction.0);
+            }
+            Err(e) => {
+                println!("    {} Action layer puzzle FAILED: {:?}", style("✗").red(), e);
+                return Err(Error::Transaction(format!("Action layer puzzle execution failed: {:?}", e)));
+            }
+        }
+    }
+
+    // Test full singleton spend locally
+    println!("  Testing full singleton spend locally...");
+    {
+        let puzzle_bytes: Vec<u8> = ctx.serialize(&singleton_puzzle).map_err(|e| Error::Transaction(format!("{:?}", e)))?.into();
+        let solution_bytes: Vec<u8> = ctx.serialize(&singleton_solution).map_err(|e| Error::Transaction(format!("{:?}", e)))?.into();
+
+        let mut test_alloc = Allocator::new();
+        let puzzle_ptr = node_from_bytes(&mut test_alloc, &puzzle_bytes).expect("valid puzzle");
+        let solution_ptr = node_from_bytes(&mut test_alloc, &solution_bytes).expect("valid solution");
+
+        match clvmr::run_program(
+            &mut test_alloc,
+            &clvmr::ChiaDialect::new(0),
+            puzzle_ptr,
+            solution_ptr,
+            11_000_000_000,
+        ) {
+            Ok(reduction) => {
+                println!("    {} Singleton test passed! cost={}", style("✓").green(), reduction.0);
+            }
+            Err(e) => {
+                println!("    {} Singleton test FAILED: {:?}", style("✗").red(), e);
+                return Err(Error::Transaction(format!("Singleton puzzle execution failed: {:?}", e)));
+            }
+        }
+    }
+
+    let singleton_spend = CoinSpend::new(
+        singleton_coin.clone(),
+        ctx.serialize(&singleton_puzzle).map_err(|e| Error::Transaction(format!("{:?}", e)))?,
+        ctx.serialize(&singleton_solution).map_err(|e| Error::Transaction(format!("{:?}", e)))?,
+    );
+
+    ctx.insert(singleton_spend);
+
+    // Spend child 1 launcher
+    println!("  Spending child 1 launcher...");
+    let (_child1_conds, child1_singleton) = Launcher::from_coin(child1_launcher_coin.clone(), Conditions::new())
+        .with_singleton_amount(child_singleton_amount)
+        .mint_vault(ctx, child1_hash, ())
+        .map_err(|e| Error::Transaction(format!("Child 1 launcher mint_vault failed: {:?}", e)))?;
+
+    println!("  Child 1 singleton ID: 0x{}", hex::encode(child1_singleton.coin.coin_id().to_bytes()));
+
+    // Fund child 1 and pay fee
+    let fee_coin1 = Coin::new(
+        funding_coin.coin_id(),
+        wallet_puzzle_hash,
+        change_after_create,
+    );
+
+    let change_after_spend1 = change_after_create - child_singleton_amount - fee;
+    let mut fee_conditions1 = Conditions::new();
+    if fee > 0 {
+        fee_conditions1 = fee_conditions1.reserve_fee(fee);
+    }
+    fee_conditions1 = fee_conditions1.create_coin(
+        child1_singleton.coin.puzzle_hash,
+        0,
+        chia::puzzles::Memos::None,
+    );
+    if change_after_spend1 > 0 {
+        fee_conditions1 = fee_conditions1.create_coin(wallet_puzzle_hash, change_after_spend1, chia::puzzles::Memos::None);
+    }
+
+    standard_layer.spend(ctx, fee_coin1, fee_conditions1)
+        .map_err(|e| Error::Transaction(format!("Fee coin 1 spend failed: {:?}", e)))?;
+
+    // Sign and broadcast spend 1
+    let coin_spends = ctx.take();
+    println!("  Signing {} coin spend(s)...", coin_spends.len());
+
+    let signature = sign_coin_spends(&coin_spends, &derived_sk, testnet)
+        .map_err(|e| Error::Transaction(format!("Signing failed: {:?}", e)))?;
+
+    let dl_spends = convert_spends_to_dl(&coin_spends);
+    let dl_sig = DLSignature::from_bytes(&signature.to_bytes())
+        .map_err(|_| Error::Transaction("Invalid signature bytes".to_string()))?;
+
+    let bundle = SpendBundle::new(dl_spends, dl_sig);
+
+    println!("  Broadcasting emit child 1 transaction...");
+    let result = dl::broadcast_spend_bundle(&peer, bundle)
+        .await
+        .map_err(|e| Error::Network(format!("{:?}", e)))?;
+
+    if result.status == 3 {
+        let err = result.error.unwrap_or_default();
+        return Err(Error::Transaction(format!("Broadcast failed: {}", err)));
+    }
+
+    // Compute new parent singleton after first spend
+    let state_after_spend1 = TestState { counter: initial_state.counter + 1, marker: initial_state.marker };
+    let new_inner_hash1 = compute_two_action_layer_inner_hash(
+        wallet_puzzle_hash, state_after_spend1, child_inner_1, child_inner_2
+    );
+    let new_singleton_puzzle_hash1: Bytes32 = SingletonArgs::curry_tree_hash(
+        launcher_id,
+        new_inner_hash1,
+    ).into();
+
+    let singleton_coin_after_spend1 = Coin::new(
+        singleton_coin.coin_id(),
+        new_singleton_puzzle_hash1,
+        singleton_coin.amount,
+    );
+
+    // Wait for confirmations
+    wait_for_coin_confirmation(
+        &peer,
+        new_singleton_puzzle_hash1,
+        singleton_coin_after_spend1.coin_id(),
+        genesis,
+        "Parent singleton (after spend 1)",
+    ).await?;
+
+    wait_for_coin_confirmation(
+        &peer,
+        child1_singleton.coin.puzzle_hash,
+        child1_singleton.coin.coin_id(),
+        genesis,
+        "Child 1 singleton",
+    ).await?;
+
+    println!("  {} Child 1 emitted via Action 1!", style("✓").green().bold());
+
+    // =========================================================================
+    // STEP 3: Second spend - emit child 2 using action 2
+    // =========================================================================
+    println!();
+    println!("{}", style("--- Step 3: Emit Child 2 via Action 2 ---").yellow().bold());
+
+    let ctx = &mut SpendContext::new();
+
+    // Child 2 launcher coin
+    let child2_launcher_coin = Coin::new(
+        singleton_coin_after_spend1.coin_id(),
+        Bytes32::new(SINGLETON_LAUNCHER_PUZZLE_HASH),
+        0,
+    );
+    let child2_launcher_id = child2_launcher_coin.coin_id();
+    println!("  Child 2 launcher ID: 0x{}", hex::encode(child2_launcher_id.to_bytes()));
+
+    // Child 2 singleton puzzle hash (uses child_inner_puzzle_2)
+    let child2_hash = child_inner_puzzle_2_hash();
+    let sdk_child2_singleton_hash: Bytes32 = SingletonArgs::curry_tree_hash(child2_launcher_id, child2_hash).into();
+    println!("  Child 2 singleton puzzle hash: 0x{}", hex::encode(sdk_child2_singleton_hash.to_bytes()));
+
+    // Create the ActionLayer for spending (with updated state)
+    let (action_layer2, _, _) = create_two_action_layer(
+        wallet_puzzle_hash, state_after_spend1, child_inner_1, child_inner_2
+    );
+
+    // Build the action layer inner puzzle
+    let inner_puzzle_ptr2 = action_layer2.construct_puzzle(ctx)
+        .map_err(|e| Error::Transaction(format!("Failed to construct action layer puzzle: {:?}", e)))?;
+
+    // Build the curried emit_child action 2 puzzle
+    let emit_action2_puzzle = build_curried_emit_child_action_puzzle(ctx, child_inner_2)
+        .map_err(|e| Error::Transaction(format!("Failed to build curried action 2: {:?}", e)))?;
+
+    // Build the action solution
+    let emit_action2_solution = EmitChildActionSolution {
+        my_singleton_coin_id: singleton_coin_after_spend1.coin_id(),
+        child_singleton_puzzle_hash: sdk_child2_singleton_hash,
+    };
+    let emit_action2_solution_ptr = ctx.alloc(&emit_action2_solution)
+        .map_err(|e| Error::Transaction(format!("Failed to alloc action solution: {:?}", e)))?;
+
+    // Get merkle proof for action 2 directly from MerkleTree
+    // (ActionLayer.get_proofs doesn't work correctly for multi-action trees)
+    let merkle_tree2 = MerkleTree::new(&[action1_hash, action2_hash]);
+    let proof2 = merkle_tree2.proof(action2_hash)
+        .ok_or_else(|| Error::Transaction("Failed to get merkle proof for action 2".to_string()))?;
+
+    println!("  Merkle proof for action 2: path={}, siblings={}", proof2.path, proof2.proof.len());
+    let proofs2 = vec![proof2];
+
+    // Build the action layer solution
+    let action_layer_solution2 = ActionLayerSolution {
+        proofs: proofs2,
+        action_spends: vec![Spend::new(emit_action2_puzzle, emit_action2_solution_ptr)],
+        finalizer_solution: clvmr::NodePtr::NIL,
+    };
+
+    let inner_solution2 = action_layer2.construct_solution(ctx, action_layer_solution2)
+        .map_err(|e| Error::Transaction(format!("Failed to construct action layer solution: {:?}", e)))?;
+
+    // Build singleton solution with lineage proof (not eve anymore!)
+    let lineage_proof = Proof::Lineage(chia::puzzles::LineageProof {
+        parent_parent_coin_info: singleton_coin.parent_coin_info, // launcher coin's parent
+        parent_inner_puzzle_hash: action_layer_inner_hash.into(), // first inner puzzle hash
+        parent_amount: singleton_coin.amount,
+    });
+
+    let singleton_solution2 = build_singleton_solution(ctx, lineage_proof, singleton_coin_after_spend1.amount, inner_solution2)
+        .map_err(|e| Error::Transaction(format!("Failed to build singleton solution: {:?}", e)))?;
+
+    let singleton_puzzle2 = build_singleton_puzzle(ctx, launcher_id, inner_puzzle_ptr2)
+        .map_err(|e| Error::Transaction(format!("Failed to build singleton puzzle: {:?}", e)))?;
+
+    let singleton_spend2 = CoinSpend::new(
+        singleton_coin_after_spend1.clone(),
+        ctx.serialize(&singleton_puzzle2).map_err(|e| Error::Transaction(format!("{:?}", e)))?,
+        ctx.serialize(&singleton_solution2).map_err(|e| Error::Transaction(format!("{:?}", e)))?,
+    );
+
+    ctx.insert(singleton_spend2);
+
+    // Spend child 2 launcher
+    println!("  Spending child 2 launcher...");
+    let (_child2_conds, child2_singleton) = Launcher::from_coin(child2_launcher_coin.clone(), Conditions::new())
+        .with_singleton_amount(child_singleton_amount)
+        .mint_vault(ctx, child2_hash, ())
+        .map_err(|e| Error::Transaction(format!("Child 2 launcher mint_vault failed: {:?}", e)))?;
+
+    println!("  Child 2 singleton ID: 0x{}", hex::encode(child2_singleton.coin.coin_id().to_bytes()));
+
+    // Fund child 2 and pay fee
+    let fee_coin2 = Coin::new(
+        fee_coin1.coin_id(),
+        wallet_puzzle_hash,
+        change_after_spend1,
+    );
+
+    let change_after_spend2 = change_after_spend1 - child_singleton_amount - fee;
+    let mut fee_conditions2 = Conditions::new();
+    if fee > 0 {
+        fee_conditions2 = fee_conditions2.reserve_fee(fee);
+    }
+    fee_conditions2 = fee_conditions2.create_coin(
+        child2_singleton.coin.puzzle_hash,
+        0,
+        chia::puzzles::Memos::None,
+    );
+    if change_after_spend2 > 0 {
+        fee_conditions2 = fee_conditions2.create_coin(wallet_puzzle_hash, change_after_spend2, chia::puzzles::Memos::None);
+    }
+
+    standard_layer.spend(ctx, fee_coin2, fee_conditions2)
+        .map_err(|e| Error::Transaction(format!("Fee coin 2 spend failed: {:?}", e)))?;
+
+    // Sign and broadcast spend 2
+    let coin_spends = ctx.take();
+    println!("  Signing {} coin spend(s)...", coin_spends.len());
+
+    let signature = sign_coin_spends(&coin_spends, &derived_sk, testnet)
+        .map_err(|e| Error::Transaction(format!("Signing failed: {:?}", e)))?;
+
+    let dl_spends = convert_spends_to_dl(&coin_spends);
+    let dl_sig = DLSignature::from_bytes(&signature.to_bytes())
+        .map_err(|_| Error::Transaction("Invalid signature bytes".to_string()))?;
+
+    let bundle = SpendBundle::new(dl_spends, dl_sig);
+
+    println!("  Broadcasting emit child 2 transaction...");
+    let result = dl::broadcast_spend_bundle(&peer, bundle)
+        .await
+        .map_err(|e| Error::Network(format!("{:?}", e)))?;
+
+    if result.status == 3 {
+        let err = result.error.unwrap_or_default();
+        return Err(Error::Transaction(format!("Broadcast failed: {}", err)));
+    }
+
+    // Compute final parent singleton state
+    let final_state = TestState { counter: state_after_spend1.counter + 1, marker: state_after_spend1.marker };
+    let final_inner_hash = compute_two_action_layer_inner_hash(
+        wallet_puzzle_hash, final_state, child_inner_1, child_inner_2
+    );
+    let final_singleton_puzzle_hash: Bytes32 = SingletonArgs::curry_tree_hash(
+        launcher_id,
+        final_inner_hash,
+    ).into();
+
+    let final_singleton_coin = Coin::new(
+        singleton_coin_after_spend1.coin_id(),
+        final_singleton_puzzle_hash,
+        singleton_coin_after_spend1.amount,
+    );
+
+    // Wait for confirmations
+    wait_for_coin_confirmation(
+        &peer,
+        final_singleton_puzzle_hash,
+        final_singleton_coin.coin_id(),
+        genesis,
+        "Parent singleton (final)",
+    ).await?;
+
+    wait_for_coin_confirmation(
+        &peer,
+        child2_singleton.coin.puzzle_hash,
+        child2_singleton.coin.coin_id(),
+        genesis,
+        "Child 2 singleton",
+    ).await?;
+
+    println!("  {} Child 2 emitted via Action 2!", style("✓").green().bold());
+
+    // =========================================================================
+    // Done!
+    // =========================================================================
+    println!();
+    println!("{}", style("=== TWO ACTIONS TEST COMPLETE ===").green().bold());
+    println!();
+    println!("  Parent launcher ID: 0x{}", hex::encode(launcher_id.to_bytes()));
+    println!("  Child 1 launcher ID: 0x{}", hex::encode(child1_launcher_id.to_bytes()));
+    println!("  Child 2 launcher ID: 0x{}", hex::encode(child2_launcher_id.to_bytes()));
+    println!("  State: counter incremented from {} to {}", initial_state.counter, final_state.counter);
+    println!("  Two actions test: {}", style("PASSED").green().bold());
+    println!();
+    println!("Action layer with TWO actions successfully spawned TWO child singletons!");
 
     Ok(())
 }
