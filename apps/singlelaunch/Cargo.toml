@@ -62,3 +62,6 @@ tracing-subscriber = { workspace = true }
 
 # Peer connections
 datalayer-driver = { workspace = true }
+
+# Local crates
+action-layer-driver = { workspace = true }

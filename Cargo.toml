@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/wallet",
+    "crates/action-layer-driver",
     "apps/singlelaunch",
 ]
 resolver = "2"
@@ -65,3 +66,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Peer connections
 datalayer-driver = "3"
+
+# Local crates
+action-layer-driver = { path = "crates/action-layer-driver" }
