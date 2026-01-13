@@ -1,0 +1,48 @@
+[package]
+name = "l2-wallet"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Wallet management and transaction utilities for Chia L2 consensus"
+repository = "https://github.com/DIG-Network/puzzle_tests"
+keywords = ["chia", "wallet", "cryptocurrency", "blockchain"]
+categories = ["cryptography::cryptocurrencies"]
+
+[dependencies]
+# Chia SDK - main library for wallet operations
+chia = { workspace = true }
+chia-wallet-sdk = { workspace = true }
+chia-sdk-test = { workspace = true }
+
+# Chia types and crypto (using 0.26 for compatibility with datalayer-driver)
+chia-bls = { workspace = true }
+chia-protocol = { workspace = true }
+chia-puzzle-types = { workspace = true }
+
+# Crypto and encoding
+hex = { workspace = true }
+sha2 = { workspace = true }
+rand = { workspace = true }
+bech32 = { workspace = true }
+bip39 = { workspace = true }
+
+# Directories
+dirs = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { workspace = true }
+tokio-test = "0.4"
+rstest = "0.18"

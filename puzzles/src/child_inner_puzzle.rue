@@ -1,0 +1,7 @@
+// This is just a placeholder for an actual child inner puzzle
+export fn main() -> Any {
+    [
+        // Melt the singleton (this is a special singleton condition)
+        [51, 0, -113]
+    ]
+}

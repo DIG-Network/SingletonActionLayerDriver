@@ -1,0 +1,51 @@
+// SLOT PUZZLE (CHIP-0050 Slot-Machine Pattern)
+// Reference: https://github.com/Yakuhito/slot-machine/blob/master/puzzles/singleton/slot.clsp
+//
+// A singleton slot coin stores values that may be read at a later spend.
+// To read values, the singleton spends the slot - values are only readable once.
+//
+// TWO-STAGE CURRY:
+//   1st curry: (SINGLETON_MOD_HASH, SINGLETON_STRUCT_HASH), NONCE
+//   2nd curry: VALUE_HASH
+
+const ASSERT_MY_PARENT_ID: Int = 71;
+const RECEIVE_MESSAGE: Int = 67;
+const MESSAGE_MODE_PUZZLE_TO_PUZZLE: Int = 18;
+
+export fn main(
+    // 1st curry - controller singleton info
+    singleton_mod_hash: Bytes32,
+    singleton_struct_hash: Bytes32,
+    nonce: Int,
+    // 2nd curry
+    value_hash: Bytes32,
+    // Solution - lineage proof
+    parent_parent_info: Bytes32,
+    parent_inner_puzzle_hash: Bytes32,
+    parent_amount: Int,
+    // Spender info
+    spender_inner_puzzle_hash: Bytes32,
+) -> List<Any> {
+    // Compute parent singleton puzzle hash
+    let parent_singleton_ph = curry_tree_hash(
+        singleton_mod_hash,
+        [singleton_struct_hash, parent_inner_puzzle_hash]
+    );
+
+    // Compute expected parent coin ID
+    let expected_parent_id = coinid(parent_parent_info, parent_singleton_ph, parent_amount);
+
+    // Compute spender singleton puzzle hash
+    let spender_singleton_ph = curry_tree_hash(
+        singleton_mod_hash,
+        [singleton_struct_hash, spender_inner_puzzle_hash]
+    );
+
+    [
+        // Assert this slot came from the controller singleton
+        [ASSERT_MY_PARENT_ID, expected_parent_id],
+
+        // Receive message from spender singleton (puzzle-to-puzzle)
+        [RECEIVE_MESSAGE, MESSAGE_MODE_PUZZLE_TO_PUZZLE, nil, spender_singleton_ph],
+    ]
+}

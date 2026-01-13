@@ -1,0 +1,50 @@
+import constants::{SINGLETON_LAUNCHER_HASH, curry_singleton_hash};
+
+export fn main(
+    mod_hash: Bytes32,
+    child_inner_puzzle_hash: Bytes32,
+    my_coin_id: Bytes32,
+) -> List<Condition> {
+    // This is the hash of the launcher coin we're creating (i.e., the new singleton's launcher id)
+    let child_launcher_id = coinid(my_coin_id, SINGLETON_LAUNCHER_HASH, 0);
+
+    // We can now calculate its puzzle hash
+    let child_singleton_puzzle_hash = curry_singleton_hash(child_launcher_id, child_inner_puzzle_hash);
+
+    // The message that we'll assert from the launcher coin. We assume that the child singleton amount is 1
+    // and that it didn't have any key value list other than nil.
+    let launcher_message = tree_hash([child_singleton_puzzle_hash, 1, nil]);
+
+    [
+        // We need to verify that this is true
+        AssertMyCoinId {
+            coin_id: my_coin_id,
+        },
+
+        // Recreate this emitter singleton
+        CreateCoin {
+            puzzle_hash: curry_emitter_hash(mod_hash, child_inner_puzzle_hash),
+            amount: 1,
+        },
+
+        // Create a new child singleton launcher
+        // NOTE: This has to be a 0 amount coin, because only one odd child can be output from a singleton
+        // The odd output of a singleton puzzle is always the next instance of the same singleton
+        CreateCoin {
+            puzzle_hash: SINGLETON_LAUNCHER_HASH,
+            amount: 0,
+        },
+
+        // Assert that the child singleton was actually launched
+        AssertCoinAnnouncement {
+            id: sha256(child_launcher_id + launcher_message),
+        },
+    ]
+}
+
+fn curry_emitter_hash(mod_hash: Bytes32, child_inner_puzzle_hash: Bytes32) -> Bytes32 {
+    curry_tree_hash(mod_hash, [
+        tree_hash_atom(mod_hash),
+        tree_hash_atom(child_inner_puzzle_hash)
+    ])
+}

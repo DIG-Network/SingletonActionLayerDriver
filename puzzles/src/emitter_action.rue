@@ -1,0 +1,47 @@
+// EMITTER ACTION - Emits a child singleton from the action layer
+//
+// Action I/O Contract (CHIP-0050):
+// Input: ((Ephemeral_State . Persistent_State), Solution)
+// Output: ((new_ephemeral . new_persistent), conditions)
+//
+// Persistent State: child_inner_puzzle_hash (the inner puzzle hash for spawned child singletons)
+// Solution: my_coin_id
+//
+// This action creates a 0-amount launcher coin and asserts the child singleton was launched.
+
+import constants::{SINGLETON_LAUNCHER_HASH, curry_singleton_hash};
+
+// State = (ephemeral, persistent) where persistent = child_inner_puzzle_hash
+type State = (Any, Bytes32);
+
+export fn main(action_input: (State, Bytes32)) -> (State, List<Any>) {
+    // Destructure input: ((ephemeral, persistent), my_coin_id)
+    let (state, my_coin_id) = action_input;
+    let (ephemeral, child_inner_puzzle_hash) = state;
+
+    // Calculate the child launcher ID (hash of launcher coin we're creating)
+    let child_launcher_id = coinid(my_coin_id, SINGLETON_LAUNCHER_HASH, 0);
+
+    // Calculate the child singleton's full puzzle hash
+    let child_singleton_puzzle_hash = curry_singleton_hash(child_launcher_id, child_inner_puzzle_hash);
+
+    // The launcher message: (puzzle_hash, amount, key_value_list)
+    // We assume child singleton amount is 1 and no key_value_list
+    let launcher_message = tree_hash([child_singleton_puzzle_hash, 1, nil]);
+
+    // Build conditions to emit the child singleton
+    let conditions: List<Any> = [
+        // Assert this is the correct coin
+        [72, my_coin_id],  // ASSERT_MY_COIN_ID
+
+        // Create the launcher coin (must be 0 amount - only one odd output allowed from singleton)
+        [51, SINGLETON_LAUNCHER_HASH, 0],  // CREATE_COIN
+
+        // Assert the child singleton was actually launched
+        [61, sha256(child_launcher_id + launcher_message)],  // ASSERT_COIN_ANNOUNCEMENT
+    ];
+
+    // Return: ((new_ephemeral, new_persistent), conditions)
+    // State unchanged - the child_inner_puzzle_hash remains the same for future emissions
+    ((ephemeral, child_inner_puzzle_hash), conditions)
+}

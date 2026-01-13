@@ -1,0 +1,34 @@
+// ACTION LAYER PUZZLE (CHIP-0050 Slot-Machine Pattern)
+// Reference: https://github.com/Yakuhito/slot-machine/blob/master/puzzles/singleton/action.clsp
+//
+// NOTE: The full action layer is in action.clsp (ChiaLisp) because it requires
+// dynamic puzzle execution. This is a simplified Rue version.
+//
+// Action I/O contract:
+//   Input:  ((Ephemeral_State . Persistent_State), Solution)
+//   Output: ((new_ephemeral . new_persistent), conditions)
+
+// State type for slot-machine pattern
+type State = (Any, Any);
+type PuzzleFn = fn(input: Any) -> Any;
+
+/// Simplified action layer - executes a single action
+export fn main(
+    finalizer: Any,
+    merkle_root: Bytes32,
+    state: Any,
+    action_puzzle: Any,
+    action_solution: Any,
+    finalizer_solution: Any,
+) -> Any {
+    // Build initial state pair: (ephemeral=nil, persistent=state)
+    let initial_state: State = (nil, state);
+
+    // Build action input and run action using dynamic apply
+    let action_input = (initial_state, action_solution);
+    let action_result = unchecked_cast::<PuzzleFn>(action_puzzle)(action_input);
+
+    // Build finalizer input and run finalizer
+    let finalizer_input = [merkle_root, state, action_result, finalizer_solution];
+    unchecked_cast::<PuzzleFn>(finalizer)(finalizer_input)
+}
