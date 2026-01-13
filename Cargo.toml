@@ -15,7 +15,7 @@ authors = ["DIG Network"]
 [workspace.dependencies]
 # Chia SDK - using 0.26/0.30 for datalayer-driver 3.0.0 compatibility
 chia = "0.26"
-chia-wallet-sdk = "0.30"
+chia-wallet-sdk = { version = "0.30", features = ["action-layer"] }
 chia-sdk-test = "0.30"
 
 # Chia types and crypto (0.26 for datalayer-driver compatibility)

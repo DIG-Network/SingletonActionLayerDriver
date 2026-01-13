@@ -2,11 +2,11 @@
 // Reference: https://github.com/Yakuhito/slot-machine/blob/master/puzzles/singleton/action.clsp
 //
 // NOTE: The full action layer is in action.clsp (ChiaLisp) because it requires
-// dynamic puzzle execution. This is a simplified Rue version.
+// dynamic puzzle execution. This is a simplified Rue version for single action.
 //
-// Action I/O contract:
-//   Input:  ((Ephemeral_State . Persistent_State), Solution)
-//   Output: ((new_ephemeral . new_persistent), conditions)
+// Action I/O contract (per slot-machine spec):
+//   Input:  (list (ephemeral . persistent) solution) - a CLVM list
+//   Output: ((new_ephemeral . new_persistent) . conditions)
 
 // State type for slot-machine pattern
 type State = (Any, Any);
@@ -24,8 +24,9 @@ export fn main(
     // Build initial state pair: (ephemeral=nil, persistent=state)
     let initial_state: State = (nil, state);
 
-    // Build action input and run action using dynamic apply
-    let action_input = (initial_state, action_solution);
+    // Build action input as a LIST per spec: (list ephemeral_and_state solution)
+    // In Rue, [...] creates a list: (a . (b . ()))
+    let action_input = [initial_state, action_solution];
     let action_result = unchecked_cast::<PuzzleFn>(action_puzzle)(action_input);
 
     // Build finalizer input and run finalizer

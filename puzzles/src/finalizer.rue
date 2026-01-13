@@ -18,13 +18,13 @@ export fn main(
     finalizer_self_hash: Bytes32,
     // From action layer
     merkle_root: Bytes32,
-    initial_state: Any,
+    _initial_state: Any,  // Not used by basic finalizer
     action_output: (State, List<Any>),
-    my_solution: Any,
+    _my_solution: Any,    // Not used by basic finalizer
 ) -> List<Any> {
     // Extract state and conditions
     let (final_state, conditions) = action_output;
-    let (ephemeral, new_state) = final_state;
+    let (_ephemeral, new_state) = final_state;
 
     // Compute finalizer puzzle hash
     let finalizer_puzzle_hash = curry_tree_hash(

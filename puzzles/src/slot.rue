@@ -16,9 +16,9 @@ export fn main(
     // 1st curry - controller singleton info
     singleton_mod_hash: Bytes32,
     singleton_struct_hash: Bytes32,
-    nonce: Int,
+    _nonce: Int,       // Curried for uniqueness, not used in logic
     // 2nd curry
-    value_hash: Bytes32,
+    _value_hash: Bytes32,  // Value stored in slot, accessed via observer pattern
     // Solution - lineage proof
     parent_parent_info: Bytes32,
     parent_inner_puzzle_hash: Bytes32,

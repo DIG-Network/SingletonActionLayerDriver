@@ -16,7 +16,7 @@ export fn main(
     // Curried args
     singleton_mod_hash: Bytes32,
     singleton_struct_hash: Bytes32,
-    nonce: Int,
+    _nonce: Int,  // Curried for uniqueness, not used in logic
     // Solution
     singleton_inner_puzzle_hash: Bytes32,
     delegated_puzzle: Any,

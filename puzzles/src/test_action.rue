@@ -1,0 +1,20 @@
+// test_action.rue
+// A truly minimal action puzzle for testing
+//
+// SDK calls actions with: (a action_puzzle (c state action_solution))
+// So env = (state . action_solution)
+//
+// We just pass state through unchanged with empty conditions
+
+export fn main(
+    // From action layer - the current state
+    // We don't know or care about its structure
+    state: Any,
+    // Action solution - not used
+    _action_solution: Any,
+) -> Any {
+    // Return (state . conditions) where conditions = []
+    // Action layer expects: ((new_state . ephemeral) . conditions)
+    // But for simplest test, just return (state . ())
+    (state, nil)
+}

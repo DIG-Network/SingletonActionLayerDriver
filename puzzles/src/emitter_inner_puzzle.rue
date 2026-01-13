@@ -1,15 +1,16 @@
-import constants::{SINGLETON_LAUNCHER_HASH, curry_singleton_hash};
+import constants::SINGLETON_LAUNCHER_HASH;
 
 export fn main(
     mod_hash: Bytes32,
     child_inner_puzzle_hash: Bytes32,
+    // Solution: (my_coin_id, child_singleton_puzzle_hash)
+    // We receive the child_singleton_puzzle_hash from the driver to ensure it matches
+    // what the SDK computes (avoiding hash computation differences between Rue and SDK)
     my_coin_id: Bytes32,
+    child_singleton_puzzle_hash: Bytes32,
 ) -> List<Condition> {
     // This is the hash of the launcher coin we're creating (i.e., the new singleton's launcher id)
     let child_launcher_id = coinid(my_coin_id, SINGLETON_LAUNCHER_HASH, 0);
-
-    // We can now calculate its puzzle hash
-    let child_singleton_puzzle_hash = curry_singleton_hash(child_launcher_id, child_inner_puzzle_hash);
 
     // The message that we'll assert from the launcher coin. We assume that the child singleton amount is 1
     // and that it didn't have any key value list other than nil.
@@ -47,4 +48,8 @@ fn curry_emitter_hash(mod_hash: Bytes32, child_inner_puzzle_hash: Bytes32) -> By
         tree_hash_atom(mod_hash),
         tree_hash_atom(child_inner_puzzle_hash)
     ])
+}
+
+inline fn tree_hash_atom(value: Bytes32) -> Bytes32 {
+    sha256(0x01 as Bytes + value as Bytes)
 }

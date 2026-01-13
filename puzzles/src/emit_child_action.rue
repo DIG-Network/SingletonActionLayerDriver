@@ -1,0 +1,63 @@
+// emit_child_action.rue
+// An action puzzle for the action layer that emits a child singleton
+//
+// Action Layer Interface (CHIP-0050):
+//   Action receives: (state . action_solution) where state = (ephemeral . persistent)
+//   Action returns: ((new_ephemeral . new_persistent) . conditions)
+//
+// This action:
+//   - Creates a 0-amount launcher coin (ephemeral, spent in same bundle)
+//   - Asserts the launcher's announcement (ensures launcher is spent correctly)
+//   - Increments the counter in persistent state
+//
+// The Rust driver must spend the launcher coin in the same bundle.
+//
+// Solution structure: (my_singleton_coin_id . child_singleton_puzzle_hash)
+// Persistent state structure: (counter . marker)
+
+import constants::SINGLETON_LAUNCHER_HASH;
+
+// Type definitions for structured destructuring
+// Persistent state = (counter . marker) - two u64 fields
+type Persistent = (Int, Int);
+// State = (ephemeral . persistent)
+type State = (Any, Persistent);
+// Solution = (my_coin_id . child_puzzle_hash)
+type Solution = (Bytes32, Bytes32);
+
+export fn main(state: State, action_solution: Solution) -> Any {
+    // Destructure state: (ephemeral . (counter . marker))
+    let (ephemeral, persistent) = state;
+    let (counter, marker) = persistent;
+
+    // Destructure solution: (my_coin_id . child_puzzle_hash)
+    let (my_singleton_coin_id, child_singleton_puzzle_hash) = action_solution;
+
+    // Compute the child launcher ID (parent=my_coin, puzzle=launcher, amount=0)
+    let child_launcher_id = coinid(my_singleton_coin_id, SINGLETON_LAUNCHER_HASH, 0);
+
+    // The launcher announcement message: tree_hash([child_singleton_puzzle_hash, 1, nil])
+    // This is what the launcher announces when creating a singleton
+    let launcher_message = tree_hash([child_singleton_puzzle_hash, 1, nil]);
+
+    // Build conditions
+    let conditions: List<Condition> = [
+        // Create the child launcher coin (0-amount, ephemeral)
+        CreateCoin {
+            puzzle_hash: SINGLETON_LAUNCHER_HASH,
+            amount: 0,
+        },
+        // Assert the launcher announcement - ensures launcher is spent correctly
+        AssertCoinAnnouncement {
+            id: sha256(child_launcher_id + launcher_message),
+        },
+    ];
+
+    // Build new state: increment counter, keep marker
+    let new_counter = counter + 1;
+    let new_persistent: Persistent = (new_counter, marker);
+
+    // Return ((new_ephemeral . new_persistent) . conditions)
+    // Keep ephemeral unchanged
+    ((ephemeral, new_persistent), conditions)
+}

@@ -1,0 +1,25 @@
+// SIMPLE ACTION - Just recreates the singleton with assert condition
+// Used for testing the action layer structure
+//
+// Action I/O Contract (CHIP-0050 slot-machine spec):
+// Input: (list (ephemeral . persistent) solution) = ((eph . pers) . (solution . ()))
+// Output: ((new_ephemeral . new_persistent) . conditions)
+//
+// This action just asserts coin id to prove it ran
+
+type State = (Any, Bytes32);
+type SolutionRest = (Bytes32, Any);
+type ActionInput = (State, SolutionRest);
+
+export fn main(action_input: ActionInput) -> (State, List<Any>) {
+    // Destructure input
+    let (state, solution_rest) = action_input;
+    let (my_coin_id, _nil) = solution_rest;
+
+    // Return same state with ASSERT_MY_COIN_ID condition
+    let conditions: List<Any> = [
+        [72, my_coin_id],  // ASSERT_MY_COIN_ID
+    ];
+
+    (state, conditions)
+}
