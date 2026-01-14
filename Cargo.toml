@@ -32,10 +32,6 @@ hex-literal = "0.4"
 # Error handling
 thiserror = "2"
 
-[dev-dependencies]
-tokio = { version = "1", features = ["full"] }
-anyhow = "1.0"
-
 [workspace]
 members = [
     "examples/singlelaunch",

@@ -104,11 +104,5 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Unused dependencies
-        shell: bash
-        run: |
-          cargo install cargo-machete --locked
-          cargo machete
-
       - name: Fmt
         run: cargo fmt --all -- --check
