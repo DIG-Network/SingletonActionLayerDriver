@@ -73,7 +73,7 @@ driver.apply_spend(new_state);
 
 ## API Reference
 
-### SingletonDriver<S>
+### `SingletonDriver<S>`
 
 The core driver for Action Layer singletons, generic over state type `S`.
 
