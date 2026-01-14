@@ -35,19 +35,19 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
-mod error;
-mod manager;
-mod keys;
 mod address;
-mod transaction;
+mod error;
+mod keys;
+mod manager;
 mod storage;
+mod transaction;
 
-pub use error::{WalletError, WalletResult};
-pub use manager::{WalletManager, Wallet, DerivationPath};
-pub use keys::{SyntheticKey, KeyDerivation};
 pub use address::{Address, AddressUtils};
-pub use transaction::{TransactionSigner, SigningContext};
-pub use storage::{WalletStorage, WalletInfo};
+pub use error::{WalletError, WalletResult};
+pub use keys::{KeyDerivation, SyntheticKey};
+pub use manager::{DerivationPath, Wallet, WalletManager};
+pub use storage::{WalletInfo, WalletStorage};
+pub use transaction::{SigningContext, TransactionSigner};
 
 /// Re-export commonly used types
 pub use chia::bls::{PublicKey, SecretKey};

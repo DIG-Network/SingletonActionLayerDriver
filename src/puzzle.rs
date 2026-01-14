@@ -49,7 +49,10 @@ impl PuzzleModule {
         let ptr = node_from_bytes(&mut alloc, &bytes)
             .map_err(|e| DriverError::PuzzleParse(format!("{:?}", e)))?;
         let mod_hash = chia::clvm_utils::tree_hash(&alloc, ptr);
-        Ok(Self { mod_hash, mod_bytes: bytes })
+        Ok(Self {
+            mod_hash,
+            mod_bytes: bytes,
+        })
     }
 
     /// Create a PuzzleModule from a hex string (with optional whitespace)

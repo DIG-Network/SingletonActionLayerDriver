@@ -1,7 +1,7 @@
 name: CI
 
 env:
-  RUST_TOOLCHAIN: "1.75.0"
+  RUST_TOOLCHAIN: "1.90.0"
 
 permissions:
   contents: read
@@ -40,7 +40,20 @@ jobs:
           echo "PR Cargo.toml version: $PR_CRATE_VER"
           echo "Main Cargo.toml version: $MAIN_CRATE_VER"
 
+      - name: Ensure workspace/package versions match (if both present)
+        if: ${{ github.event.pull_request.base.ref == 'main' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG_VER=$(grep -m1 '^version\s*=\s*"' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/' || true)
+          WS_VER=$(awk '/^\[workspace.package\]/{f=1;next} /^\[/{f=0} f && /^version\s*=/{print; exit}' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/' || true)
+          if [ -n "${WS_VER}" ] && [ -n "${PKG_VER}" ] && [ "${WS_VER}" != "${PKG_VER}" ]; then
+            echo "[workspace.package].version (${WS_VER}) does not match [package].version (${PKG_VER}). Please keep them in sync before merging to main." >&2
+            exit 1
+          fi
+
       - name: Ensure version increased
+        if: ${{ github.event.pull_request.base.ref == 'main' }}
         shell: bash
         run: |
           cmp_versions () { [ "$1" = "$2" ] && return 1; printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1 | grep -q "^$2$"; }

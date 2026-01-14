@@ -13,20 +13,20 @@ use clap::{Parser, Subcommand};
 use console::style;
 use std::path::PathBuf;
 
-use chia::protocol::{Bytes32, Coin, CoinSpend, SpendBundle};
 use chia::bls::DerivableKey;
+use chia::protocol::{Bytes32, Coin, CoinSpend, SpendBundle};
 
 use chia_wallet_sdk::driver::{SpendContext, StandardLayer};
-use chia_wallet_sdk::types::{Conditions, MAINNET_CONSTANTS, TESTNET11_CONSTANTS};
 use chia_wallet_sdk::signer::{AggSigConstants, RequiredSignature};
+use chia_wallet_sdk::types::{Conditions, MAINNET_CONSTANTS, TESTNET11_CONSTANTS};
 
 use clvm_utils::ToTreeHash;
 use clvmr::Allocator;
 
-use datalayer_driver::Signature as DLSignature;
 use datalayer_driver::async_api as dl;
+use datalayer_driver::Signature as DLSignature;
 
-use driver::{TwoActionSingleton, ActionState};
+use driver::{ActionState, TwoActionSingleton};
 
 type StandardArgs = chia::puzzles::standard::StandardArgs;
 
@@ -125,7 +125,12 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Wallet { cmd } => run_wallet_command(cmd).await?,
-        Commands::TwoActions { testnet, wallet, fee, password } => {
+        Commands::TwoActions {
+            testnet,
+            wallet,
+            fee,
+            password,
+        } => {
             test_two_actions(testnet, &wallet, fee, password).await?;
         }
     }
@@ -137,7 +142,12 @@ async fn main() -> anyhow::Result<()> {
 // Two Actions Test
 // ============================================================================
 
-async fn test_two_actions(testnet: bool, wallet_name: &str, fee: u64, password: Option<String>) -> Result<()> {
+async fn test_two_actions(
+    testnet: bool,
+    wallet_name: &str,
+    fee: u64,
+    password: Option<String>,
+) -> Result<()> {
     use dialoguer::Password;
 
     let singleton_amount: u64 = 1;
@@ -177,8 +187,14 @@ async fn test_two_actions(testnet: bool, wallet_name: &str, fee: u64, password: 
     let initial_state = ActionState::new(1, 0xDEADBEEF);
     let mut singleton = TwoActionSingleton::new(wallet_puzzle_hash, initial_state);
 
-    println!("  Child inner 1: 0x{}...", &hex::encode(singleton.child_inner_1().to_bytes())[..16]);
-    println!("  Child inner 2: 0x{}...", &hex::encode(singleton.child_inner_2().to_bytes())[..16]);
+    println!(
+        "  Child inner 1: 0x{}...",
+        &hex::encode(singleton.child_inner_1().to_bytes())[..16]
+    );
+    println!(
+        "  Child inner 2: 0x{}...",
+        &hex::encode(singleton.child_inner_2().to_bytes())[..16]
+    );
 
     // Connect
     let peer = connect_peer(testnet).await?;
@@ -197,7 +213,9 @@ async fn test_two_actions(testnet: bool, wallet_name: &str, fee: u64, password: 
     }
 
     let required = singleton_amount + 2 + fee * 3; // singleton + 2 children + 3 fees
-    let funding_coin_old = coins.coin_states.iter()
+    let funding_coin_old = coins
+        .coin_states
+        .iter()
         .find(|cs| cs.coin.amount >= required)
         .map(|cs| &cs.coin)
         .ok_or_else(|| Error::InsufficientFunds(format!("Need {} mojos", required)))?;
@@ -212,11 +230,15 @@ async fn test_two_actions(testnet: bool, wallet_name: &str, fee: u64, password: 
     // STEP 1: Create singleton with TWO actions
     // =========================================================================
     println!();
-    println!("{}", style("--- Step 1: Create Singleton ---").yellow().bold());
+    println!(
+        "{}",
+        style("--- Step 1: Create Singleton ---").yellow().bold()
+    );
 
     let ctx = &mut SpendContext::new();
 
-    let launch_result = singleton.launch(ctx, &funding_coin, singleton_amount)
+    let launch_result = singleton
+        .launch(ctx, &funding_coin, singleton_amount)
         .map_err(|e| Error::Transaction(format!("{:?}", e)))?;
 
     let launcher_id = launch_result.launcher_id;
@@ -229,13 +251,18 @@ async fn test_two_actions(testnet: bool, wallet_name: &str, fee: u64, password: 
     let change_after_create = funding_coin.amount - singleton_amount - fee;
     let mut conditions = launcher_conditions;
     if change_after_create > 0 {
-        conditions = conditions.create_coin(wallet_puzzle_hash, change_after_create, chia::puzzles::Memos::None);
+        conditions = conditions.create_coin(
+            wallet_puzzle_hash,
+            change_after_create,
+            chia::puzzles::Memos::None,
+        );
     }
     if fee > 0 {
         conditions = conditions.reserve_fee(fee);
     }
 
-    standard_layer.spend(ctx, funding_coin.clone(), conditions)
+    standard_layer
+        .spend(ctx, funding_coin.clone(), conditions)
         .map_err(|e| Error::Transaction(format!("{:?}", e)))?;
 
     // Sign and broadcast
@@ -246,7 +273,14 @@ async fn test_two_actions(testnet: bool, wallet_name: &str, fee: u64, password: 
     println!("  Broadcasting...");
     broadcast_bundle(&peer, &coin_spends, signature).await?;
 
-    wait_for_coin_confirmation(&peer, singleton_coin.puzzle_hash, singleton_coin.coin_id(), genesis, "Singleton").await?;
+    wait_for_coin_confirmation(
+        &peer,
+        singleton_coin.puzzle_hash,
+        singleton_coin.coin_id(),
+        genesis,
+        "Singleton",
+    )
+    .await?;
     println!("  {} Singleton created!", style("OK").green().bold());
 
     // =========================================================================
@@ -258,23 +292,42 @@ async fn test_two_actions(testnet: bool, wallet_name: &str, fee: u64, password: 
     let ctx = &mut SpendContext::new();
 
     // The singleton driver handles proofs internally
-    let emit_result_1 = singleton.emit_child_1(ctx)
+    let emit_result_1 = singleton
+        .emit_child_1(ctx)
         .map_err(|e| Error::Transaction(format!("{:?}", e)))?;
 
-    println!("  Child 1 ID: 0x{}...", &hex::encode(emit_result_1.child_singleton.coin_id().to_bytes())[..16]);
+    println!(
+        "  Child 1 ID: 0x{}...",
+        &hex::encode(emit_result_1.child_singleton.coin_id().to_bytes())[..16]
+    );
 
     // Fund child and pay fee
-    let fee_coin1 = Coin::new(funding_coin.coin_id(), wallet_puzzle_hash, change_after_create);
+    let fee_coin1 = Coin::new(
+        funding_coin.coin_id(),
+        wallet_puzzle_hash,
+        change_after_create,
+    );
     let change_after_spend1 = change_after_create - 1 - fee;
 
     let mut fee_conditions1 = Conditions::new();
-    if fee > 0 { fee_conditions1 = fee_conditions1.reserve_fee(fee); }
-    fee_conditions1 = fee_conditions1.create_coin(emit_result_1.child_singleton.puzzle_hash, 0, chia::puzzles::Memos::None);
+    if fee > 0 {
+        fee_conditions1 = fee_conditions1.reserve_fee(fee);
+    }
+    fee_conditions1 = fee_conditions1.create_coin(
+        emit_result_1.child_singleton.puzzle_hash,
+        0,
+        chia::puzzles::Memos::None,
+    );
     if change_after_spend1 > 0 {
-        fee_conditions1 = fee_conditions1.create_coin(wallet_puzzle_hash, change_after_spend1, chia::puzzles::Memos::None);
+        fee_conditions1 = fee_conditions1.create_coin(
+            wallet_puzzle_hash,
+            change_after_spend1,
+            chia::puzzles::Memos::None,
+        );
     }
 
-    standard_layer.spend(ctx, fee_coin1.clone(), fee_conditions1)
+    standard_layer
+        .spend(ctx, fee_coin1.clone(), fee_conditions1)
         .map_err(|e| Error::Transaction(format!("{:?}", e)))?;
 
     // Sign and broadcast
@@ -285,8 +338,22 @@ async fn test_two_actions(testnet: bool, wallet_name: &str, fee: u64, password: 
     println!("  Broadcasting...");
     broadcast_bundle(&peer, &coin_spends, signature).await?;
 
-    wait_for_coin_confirmation(&peer, emit_result_1.new_parent_coin.puzzle_hash, emit_result_1.new_parent_coin.coin_id(), genesis, "Parent singleton").await?;
-    wait_for_coin_confirmation(&peer, emit_result_1.child_singleton.puzzle_hash, emit_result_1.child_singleton.coin_id(), genesis, "Child 1").await?;
+    wait_for_coin_confirmation(
+        &peer,
+        emit_result_1.new_parent_coin.puzzle_hash,
+        emit_result_1.new_parent_coin.coin_id(),
+        genesis,
+        "Parent singleton",
+    )
+    .await?;
+    wait_for_coin_confirmation(
+        &peer,
+        emit_result_1.child_singleton.puzzle_hash,
+        emit_result_1.child_singleton.coin_id(),
+        genesis,
+        "Child 1",
+    )
+    .await?;
     println!("  {} Child 1 emitted!", style("OK").green().bold());
 
     // Apply the state change to update internal tracking
@@ -301,23 +368,38 @@ async fn test_two_actions(testnet: bool, wallet_name: &str, fee: u64, password: 
     let ctx = &mut SpendContext::new();
 
     // The singleton driver handles proofs internally after apply_spend()
-    let emit_result_2 = singleton.emit_child_2(ctx)
+    let emit_result_2 = singleton
+        .emit_child_2(ctx)
         .map_err(|e| Error::Transaction(format!("{:?}", e)))?;
 
-    println!("  Child 2 ID: 0x{}...", &hex::encode(emit_result_2.child_singleton.coin_id().to_bytes())[..16]);
+    println!(
+        "  Child 2 ID: 0x{}...",
+        &hex::encode(emit_result_2.child_singleton.coin_id().to_bytes())[..16]
+    );
 
     // Fund child and pay fee
     let fee_coin2 = Coin::new(fee_coin1.coin_id(), wallet_puzzle_hash, change_after_spend1);
     let change_after_spend2 = change_after_spend1 - 1 - fee;
 
     let mut fee_conditions2 = Conditions::new();
-    if fee > 0 { fee_conditions2 = fee_conditions2.reserve_fee(fee); }
-    fee_conditions2 = fee_conditions2.create_coin(emit_result_2.child_singleton.puzzle_hash, 0, chia::puzzles::Memos::None);
+    if fee > 0 {
+        fee_conditions2 = fee_conditions2.reserve_fee(fee);
+    }
+    fee_conditions2 = fee_conditions2.create_coin(
+        emit_result_2.child_singleton.puzzle_hash,
+        0,
+        chia::puzzles::Memos::None,
+    );
     if change_after_spend2 > 0 {
-        fee_conditions2 = fee_conditions2.create_coin(wallet_puzzle_hash, change_after_spend2, chia::puzzles::Memos::None);
+        fee_conditions2 = fee_conditions2.create_coin(
+            wallet_puzzle_hash,
+            change_after_spend2,
+            chia::puzzles::Memos::None,
+        );
     }
 
-    standard_layer.spend(ctx, fee_coin2, fee_conditions2)
+    standard_layer
+        .spend(ctx, fee_coin2, fee_conditions2)
         .map_err(|e| Error::Transaction(format!("{:?}", e)))?;
 
     // Sign and broadcast
@@ -328,8 +410,22 @@ async fn test_two_actions(testnet: bool, wallet_name: &str, fee: u64, password: 
     println!("  Broadcasting...");
     broadcast_bundle(&peer, &coin_spends, signature).await?;
 
-    wait_for_coin_confirmation(&peer, emit_result_2.new_parent_coin.puzzle_hash, emit_result_2.new_parent_coin.coin_id(), genesis, "Parent singleton").await?;
-    wait_for_coin_confirmation(&peer, emit_result_2.child_singleton.puzzle_hash, emit_result_2.child_singleton.coin_id(), genesis, "Child 2").await?;
+    wait_for_coin_confirmation(
+        &peer,
+        emit_result_2.new_parent_coin.puzzle_hash,
+        emit_result_2.new_parent_coin.coin_id(),
+        genesis,
+        "Parent singleton",
+    )
+    .await?;
+    wait_for_coin_confirmation(
+        &peer,
+        emit_result_2.child_singleton.puzzle_hash,
+        emit_result_2.child_singleton.coin_id(),
+        genesis,
+        "Child 2",
+    )
+    .await?;
     println!("  {} Child 2 emitted!", style("OK").green().bold());
 
     // =========================================================================
@@ -338,10 +434,22 @@ async fn test_two_actions(testnet: bool, wallet_name: &str, fee: u64, password: 
     println!();
     println!("{}", style("=== TEST COMPLETE ===").green().bold());
     println!();
-    println!("  Parent launcher ID: 0x{}", hex::encode(launcher_id.to_bytes()));
-    println!("  Child 1 launcher ID: 0x{}", hex::encode(emit_result_1.child_launcher_id.to_bytes()));
-    println!("  Child 2 launcher ID: 0x{}", hex::encode(emit_result_2.child_launcher_id.to_bytes()));
-    println!("  State: counter {} -> {}", initial_state.counter, emit_result_2.new_state.counter);
+    println!(
+        "  Parent launcher ID: 0x{}",
+        hex::encode(launcher_id.to_bytes())
+    );
+    println!(
+        "  Child 1 launcher ID: 0x{}",
+        hex::encode(emit_result_1.child_launcher_id.to_bytes())
+    );
+    println!(
+        "  Child 2 launcher ID: 0x{}",
+        hex::encode(emit_result_2.child_launcher_id.to_bytes())
+    );
+    println!(
+        "  State: counter {} -> {}",
+        initial_state.counter, emit_result_2.new_state.counter
+    );
     println!();
     println!("Two actions successfully spawned two child singletons!");
 
@@ -354,19 +462,27 @@ async fn test_two_actions(testnet: bool, wallet_name: &str, fee: u64, password: 
 
 async fn run_wallet_command(cmd: WalletCommands) -> Result<()> {
     match cmd {
-        WalletCommands::Create { name, show_mnemonic, force, password } => {
-            create_wallet(&name, show_mnemonic, force, password).await
-        }
-        WalletCommands::Show { name, password } => {
-            show_wallet(&name, password).await
-        }
-        WalletCommands::Balance { name, testnet, password } => {
-            check_balance(&name, testnet, password).await
-        }
+        WalletCommands::Create {
+            name,
+            show_mnemonic,
+            force,
+            password,
+        } => create_wallet(&name, show_mnemonic, force, password).await,
+        WalletCommands::Show { name, password } => show_wallet(&name, password).await,
+        WalletCommands::Balance {
+            name,
+            testnet,
+            password,
+        } => check_balance(&name, testnet, password).await,
     }
 }
 
-async fn create_wallet(name: &str, show_mnemonic: bool, force: bool, password: Option<String>) -> Result<()> {
+async fn create_wallet(
+    name: &str,
+    show_mnemonic: bool,
+    force: bool,
+    password: Option<String>,
+) -> Result<()> {
     use dialoguer::Password;
 
     println!("Creating new wallet...");
@@ -376,7 +492,8 @@ async fn create_wallet(name: &str, show_mnemonic: bool, force: bool, password: O
 
     if wallet_path.exists() && !force {
         return Err(Error::Config(format!(
-            "Wallet '{}' already exists. Use --force to overwrite.", name
+            "Wallet '{}' already exists. Use --force to overwrite.",
+            name
         )));
     }
 
@@ -413,7 +530,10 @@ async fn create_wallet(name: &str, show_mnemonic: bool, force: bool, password: O
 
     if show_mnemonic {
         println!();
-        println!("{}", style("IMPORTANT: Back up your mnemonic!").yellow().bold());
+        println!(
+            "{}",
+            style("IMPORTANT: Back up your mnemonic!").yellow().bold()
+        );
         println!("  {}", mnemonic);
     }
 
@@ -480,7 +600,10 @@ async fn check_balance(name: &str, testnet: bool, password: Option<String>) -> R
     let derived_pk = derived_sk.public_key();
     let address = compute_address(&derived_pk);
 
-    println!("Connecting to {}...", if testnet { "testnet" } else { "mainnet" });
+    println!(
+        "Connecting to {}...",
+        if testnet { "testnet" } else { "mainnet" }
+    );
 
     let peer = connect_peer(testnet).await?;
     let genesis = get_genesis_challenge(testnet);
@@ -497,7 +620,11 @@ async fn check_balance(name: &str, testnet: bool, password: Option<String>) -> R
     println!();
     println!("Wallet: {}", name);
     println!("  Address: {}", address);
-    println!("  Balance: {} mojos ({:.6} XCH)", total, total as f64 / 1e12);
+    println!(
+        "  Balance: {} mojos ({:.6} XCH)",
+        total,
+        total as f64 / 1e12
+    );
     println!("  Coins: {}", coins.coin_states.len());
 
     Ok(())
@@ -511,7 +638,11 @@ async fn connect_peer(testnet: bool) -> Result<datalayer_driver::Peer> {
     use datalayer_driver::NetworkType;
     use tokio::time::{timeout, Duration};
 
-    let network_type = if testnet { NetworkType::Testnet11 } else { NetworkType::Mainnet };
+    let network_type = if testnet {
+        NetworkType::Testnet11
+    } else {
+        NetworkType::Mainnet
+    };
 
     println!("  Connecting...");
 
@@ -521,8 +652,10 @@ async fn connect_peer(testnet: bool) -> Result<datalayer_driver::Peer> {
 
         match timeout(
             Duration::from_secs(30),
-            dl::connect_random(network_type.clone(), "wallet_node.crt", "wallet_node.key")
-        ).await {
+            dl::connect_random(network_type.clone(), "wallet_node.crt", "wallet_node.key"),
+        )
+        .await
+        {
             Ok(Ok(peer)) => {
                 println!("{}", style("connected").green());
                 return Ok(peer);
@@ -542,7 +675,9 @@ async fn connect_peer(testnet: bool) -> Result<datalayer_driver::Peer> {
         }
     }
 
-    Err(Error::Network("Failed to connect after 5 attempts".to_string()))
+    Err(Error::Network(
+        "Failed to connect after 5 attempts".to_string(),
+    ))
 }
 
 fn get_genesis_challenge(testnet: bool) -> Bytes32 {
@@ -561,7 +696,7 @@ async fn wait_for_coin_confirmation(
     genesis: Bytes32,
     coin_name: &str,
 ) -> Result<()> {
-    use tokio::time::{Duration, Instant, timeout};
+    use tokio::time::{timeout, Duration, Instant};
 
     let start = Instant::now();
     let timeout_duration = Duration::from_secs(300);
@@ -571,22 +706,36 @@ async fn wait_for_coin_confirmation(
 
     loop {
         if start.elapsed() > timeout_duration {
-            return Err(Error::Transaction(format!("Timeout waiting for {}", coin_name)));
+            return Err(Error::Transaction(format!(
+                "Timeout waiting for {}",
+                coin_name
+            )));
         }
 
         let result = timeout(
             Duration::from_secs(30),
-            dl::get_all_unspent_coins(peer, puzzle_hash, None, genesis)
-        ).await;
+            dl::get_all_unspent_coins(peer, puzzle_hash, None, genesis),
+        )
+        .await;
 
         if let Ok(Ok(coins)) = result {
             for cs in &coins.coin_states {
                 let this_coin_id = Bytes32::new(
-                    chia_protocol::Coin::new(cs.coin.parent_coin_info, cs.coin.puzzle_hash, cs.coin.amount)
-                        .coin_id().to_bytes()
+                    chia_protocol::Coin::new(
+                        cs.coin.parent_coin_info,
+                        cs.coin.puzzle_hash,
+                        cs.coin.amount,
+                    )
+                    .coin_id()
+                    .to_bytes(),
                 );
                 if this_coin_id == expected_coin_id {
-                    println!("\n  {} {} confirmed in {}s", style("OK").green().bold(), coin_name, start.elapsed().as_secs());
+                    println!(
+                        "\n  {} {} confirmed in {}s",
+                        style("OK").green().bold(),
+                        coin_name,
+                        start.elapsed().as_secs()
+                    );
                     return Ok(());
                 }
             }
@@ -612,7 +761,10 @@ async fn broadcast_bundle(
         .map_err(|e| Error::Network(format!("{:?}", e)))?;
 
     if result.status == 3 {
-        return Err(Error::Transaction(format!("Broadcast failed: {}", result.error.unwrap_or_default())));
+        return Err(Error::Transaction(format!(
+            "Broadcast failed: {}",
+            result.error.unwrap_or_default()
+        )));
     }
 
     Ok(())
@@ -654,21 +806,26 @@ fn sign_coin_spends(
         }
     }
 
-    Ok(sigs.into_iter().fold(chia::bls::Signature::default(), |a, b| a + &b))
+    Ok(sigs
+        .into_iter()
+        .fold(chia::bls::Signature::default(), |a, b| a + &b))
 }
 
 fn convert_spends_to_dl(spends: &[CoinSpend]) -> Vec<CoinSpend> {
-    spends.iter().map(|cs| {
-        CoinSpend::new(
-            Coin::new(
-                Bytes32::new(cs.coin.parent_coin_info.to_bytes()),
-                Bytes32::new(cs.coin.puzzle_hash.to_bytes()),
-                cs.coin.amount,
-            ),
-            Vec::<u8>::from(cs.puzzle_reveal.clone()).into(),
-            Vec::<u8>::from(cs.solution.clone()).into(),
-        )
-    }).collect()
+    spends
+        .iter()
+        .map(|cs| {
+            CoinSpend::new(
+                Coin::new(
+                    Bytes32::new(cs.coin.parent_coin_info.to_bytes()),
+                    Bytes32::new(cs.coin.puzzle_hash.to_bytes()),
+                    cs.coin.amount,
+                ),
+                Vec::<u8>::from(cs.puzzle_reveal.clone()).into(),
+                Vec::<u8>::from(cs.solution.clone()).into(),
+            )
+        })
+        .collect()
 }
 
 // ============================================================================
@@ -696,15 +853,20 @@ fn generate_mnemonic() -> Result<String> {
     Ok(mnemonic.to_string())
 }
 
-fn save_encrypted_wallet(path: &PathBuf, secret_key: &chia::bls::SecretKey, passphrase: &str) -> Result<()> {
-    use sha2::{Sha256, Digest};
+fn save_encrypted_wallet(
+    path: &PathBuf,
+    secret_key: &chia::bls::SecretKey,
+    passphrase: &str,
+) -> Result<()> {
+    use sha2::{Digest, Sha256};
 
     let mut hasher = Sha256::new();
     hasher.update(passphrase.as_bytes());
     let key: [u8; 32] = hasher.finalize().into();
 
     let sk_bytes = secret_key.to_bytes();
-    let encrypted: Vec<u8> = sk_bytes.iter()
+    let encrypted: Vec<u8> = sk_bytes
+        .iter()
         .enumerate()
         .map(|(i, b)| b ^ key[i % 32])
         .collect();
@@ -714,7 +876,7 @@ fn save_encrypted_wallet(path: &PathBuf, secret_key: &chia::bls::SecretKey, pass
 }
 
 fn load_encrypted_wallet(path: &PathBuf, passphrase: &str) -> Result<chia::bls::SecretKey> {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
 
     let encrypted = std::fs::read(path)?;
 
@@ -722,16 +884,15 @@ fn load_encrypted_wallet(path: &PathBuf, passphrase: &str) -> Result<chia::bls::
     hasher.update(passphrase.as_bytes());
     let key: [u8; 32] = hasher.finalize().into();
 
-    let decrypted: Vec<u8> = encrypted.iter()
+    let decrypted: Vec<u8> = encrypted
+        .iter()
         .enumerate()
         .map(|(i, b)| b ^ key[i % 32])
         .collect();
 
-    let sk_bytes: [u8; 32] = decrypted.try_into()
-        .map_err(|_| Error::InvalidPassphrase)?;
+    let sk_bytes: [u8; 32] = decrypted.try_into().map_err(|_| Error::InvalidPassphrase)?;
 
-    chia::bls::SecretKey::from_bytes(&sk_bytes)
-        .map_err(|_| Error::InvalidPassphrase)
+    chia::bls::SecretKey::from_bytes(&sk_bytes).map_err(|_| Error::InvalidPassphrase)
 }
 
 fn compute_puzzle_hash(public_key: &chia::bls::PublicKey) -> [u8; 32] {

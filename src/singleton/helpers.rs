@@ -10,8 +10,8 @@ use chia_wallet_sdk::types::Conditions;
 use clvm_utils::TreeHash;
 use clvmr::NodePtr;
 
-use crate::DriverError;
 use super::driver::SINGLETON_LAUNCHER_PUZZLE_HASH;
+use crate::DriverError;
 
 // ============================================================================
 // Proof Creation (for backward compatibility)
@@ -161,7 +161,7 @@ pub fn create_singleton_coin_spend(
         .serialize(&singleton_solution)
         .map_err(|e| DriverError::Serialize(format!("{:?}", e)))?;
 
-    let coin_spend = CoinSpend::new(singleton_coin.clone(), puzzle_reveal, solution);
+    let coin_spend = CoinSpend::new(*singleton_coin, puzzle_reveal, solution);
     ctx.insert(coin_spend);
     Ok(())
 }

@@ -1,8 +1,8 @@
 //! Transaction signing utilities.
 
+use crate::error::{WalletError, WalletResult};
 use chia::bls::{SecretKey, Signature};
 use chia::protocol::CoinSpend;
-use crate::error::{WalletError, WalletResult};
 
 /// Transaction signing context.
 pub struct SigningContext {
@@ -53,7 +53,9 @@ impl TransactionSigner {
             coin_spends,
             &constants,
         )
-        .map_err(|e| WalletError::Transaction(format!("Failed to parse required signatures: {:?}", e)))?;
+        .map_err(|e| {
+            WalletError::Transaction(format!("Failed to parse required signatures: {:?}", e))
+        })?;
 
         // Map public key to secret key for signing
         let public_key = secret_key.public_key();
@@ -82,10 +84,9 @@ impl TransactionSigner {
         }
 
         // Aggregate all signatures
-        let aggregate = signatures.iter().fold(
-            Signature::default(),
-            |acc, sig| acc + sig,
-        );
+        let aggregate = signatures
+            .iter()
+            .fold(Signature::default(), |acc, sig| acc + sig);
 
         Ok(aggregate)
     }
@@ -97,9 +98,9 @@ impl TransactionSigner {
         if amount_lower.ends_with("xch") {
             // Parse as XCH
             let num_str = amount_lower.trim_end_matches("xch").trim();
-            let xch: f64 = num_str
-                .parse()
-                .map_err(|_| WalletError::InvalidAmount(format!("Invalid amount: {}", amount_str)))?;
+            let xch: f64 = num_str.parse().map_err(|_| {
+                WalletError::InvalidAmount(format!("Invalid amount: {}", amount_str))
+            })?;
             Ok((xch * 1_000_000_000_000.0) as u64)
         } else if amount_lower.ends_with("mojo") || amount_lower.ends_with("mojos") {
             // Parse as mojos
@@ -107,14 +108,14 @@ impl TransactionSigner {
                 .trim_end_matches("mojos")
                 .trim_end_matches("mojo")
                 .trim();
-            num_str.parse().map_err(|_| {
-                WalletError::InvalidAmount(format!("Invalid amount: {}", amount_str))
-            })
+            num_str
+                .parse()
+                .map_err(|_| WalletError::InvalidAmount(format!("Invalid amount: {}", amount_str)))
         } else {
             // Assume mojos
-            amount_str.parse().map_err(|_| {
-                WalletError::InvalidAmount(format!("Invalid amount: {}", amount_str))
-            })
+            amount_str
+                .parse()
+                .map_err(|_| WalletError::InvalidAmount(format!("Invalid amount: {}", amount_str)))
         }
     }
 }
@@ -125,18 +126,33 @@ mod tests {
 
     #[test]
     fn test_parse_amount_xch() {
-        assert_eq!(TransactionSigner::parse_amount("1.5xch").unwrap(), 1_500_000_000_000);
-        assert_eq!(TransactionSigner::parse_amount("0.1xch").unwrap(), 100_000_000_000);
+        assert_eq!(
+            TransactionSigner::parse_amount("1.5xch").unwrap(),
+            1_500_000_000_000
+        );
+        assert_eq!(
+            TransactionSigner::parse_amount("0.1xch").unwrap(),
+            100_000_000_000
+        );
     }
 
     #[test]
     fn test_parse_amount_mojos() {
-        assert_eq!(TransactionSigner::parse_amount("1000000mojo").unwrap(), 1_000_000);
-        assert_eq!(TransactionSigner::parse_amount("5000000mojos").unwrap(), 5_000_000);
+        assert_eq!(
+            TransactionSigner::parse_amount("1000000mojo").unwrap(),
+            1_000_000
+        );
+        assert_eq!(
+            TransactionSigner::parse_amount("5000000mojos").unwrap(),
+            5_000_000
+        );
     }
 
     #[test]
     fn test_parse_amount_plain() {
-        assert_eq!(TransactionSigner::parse_amount("1000000").unwrap(), 1_000_000);
+        assert_eq!(
+            TransactionSigner::parse_amount("1000000").unwrap(),
+            1_000_000
+        );
     }
 }

@@ -5,7 +5,9 @@
 use std::marker::PhantomData;
 
 use chia::protocol::Bytes32;
-use chia_wallet_sdk::driver::{ActionLayer, ActionLayerSolution, Finalizer, Layer, Spend, SpendContext};
+use chia_wallet_sdk::driver::{
+    ActionLayer, ActionLayerSolution, Finalizer, Layer, Spend, SpendContext,
+};
 use chia_wallet_sdk::types::puzzles::{ActionLayerArgs, DefaultFinalizer2ndCurryArgs};
 use chia_wallet_sdk::types::MerkleTree;
 use clvm_traits::{FromClvm, ToClvm};
