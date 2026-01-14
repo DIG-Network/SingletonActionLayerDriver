@@ -23,26 +23,26 @@ mod types;
 
 // Core driver and types
 pub use driver::{SingletonDriver, SINGLETON_LAUNCHER_PUZZLE_HASH};
+pub use spend_options::{FeeOptions, SpendOptions};
 pub use types::{
     ActionSpendResult, LaunchResult, Melted, NoOutput, SingletonCoin, SingletonLineage,
 };
-pub use spend_options::{FeeOptions, SpendOptions};
 
 // Helper functions (for backward compatibility and advanced use)
 pub use helpers::{
+    // Low-level puzzle building
+    build_singleton_puzzle,
+    build_singleton_solution,
+    // Puzzle hash computation
+    child_singleton_puzzle_hash,
     // Proof creation
     create_eve_proof,
     create_lineage_proof,
-    // Puzzle hash computation
-    child_singleton_puzzle_hash,
+    create_singleton_coin_spend,
     expected_child_launcher_id,
+    launch_singleton,
     singleton_puzzle_hash,
     // Child spawning
     spawn_child_singleton,
     ChildLaunchResult,
-    // Low-level puzzle building
-    build_singleton_puzzle,
-    build_singleton_solution,
-    create_singleton_coin_spend,
-    launch_singleton,
 };

@@ -23,19 +23,19 @@
 //! let curried_ptr = puzzle.curry_puzzle(ctx, MyCurryArgs { some_hash })?;
 //! ```
 
-mod puzzle;
 mod action_layer;
-mod singleton;
 mod error;
+mod puzzle;
+mod singleton;
 
-pub use puzzle::PuzzleModule;
 pub use action_layer::ActionLayerConfig;
-pub use singleton::*;
 pub use error::DriverError;
+pub use puzzle::PuzzleModule;
+pub use singleton::*;
 
 // Re-export commonly used types from dependencies
 pub use chia::protocol::{Bytes32, Coin, CoinSpend};
-pub use chia::puzzles::{Proof, EveProof, LineageProof};
+pub use chia::puzzles::{EveProof, LineageProof, Proof};
 pub use chia_wallet_sdk::driver::SpendContext;
 pub use clvm_utils::TreeHash;
 pub use clvmr::NodePtr;

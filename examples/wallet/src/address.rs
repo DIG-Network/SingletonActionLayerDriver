@@ -1,8 +1,8 @@
 //! Address and puzzle hash utilities.
 
+use crate::error::{WalletError, WalletResult};
 use chia::bls::PublicKey;
 use chia::puzzles::standard::StandardArgs;
-use crate::error::{WalletError, WalletResult};
 
 /// Address utilities for Chia addresses.
 pub struct AddressUtils;
@@ -58,8 +58,9 @@ impl AddressUtils {
         } else {
             // Hex puzzle hash
             let hex_str = dest.strip_prefix("0x").unwrap_or(dest);
-            let bytes = hex::decode(hex_str)
-                .map_err(|e| WalletError::InvalidAddress(format!("Invalid puzzle hash hex: {}", e)))?;
+            let bytes = hex::decode(hex_str).map_err(|e| {
+                WalletError::InvalidAddress(format!("Invalid puzzle hash hex: {}", e))
+            })?;
 
             if bytes.len() != 32 {
                 return Err(WalletError::InvalidAddress(format!(
@@ -88,13 +89,19 @@ impl Address {
     /// Create an address from a puzzle hash (mainnet).
     pub fn from_puzzle_hash(puzzle_hash: [u8; 32]) -> Self {
         let bech32 = AddressUtils::puzzle_hash_to_address(&puzzle_hash, "xch");
-        Self { puzzle_hash, bech32 }
+        Self {
+            puzzle_hash,
+            bech32,
+        }
     }
 
     /// Create a testnet address from a puzzle hash.
     pub fn from_puzzle_hash_testnet(puzzle_hash: [u8; 32]) -> Self {
         let bech32 = AddressUtils::puzzle_hash_to_address(&puzzle_hash, "txch");
-        Self { puzzle_hash, bech32 }
+        Self {
+            puzzle_hash,
+            bech32,
+        }
     }
 
     /// Create an address from a public key (mainnet).

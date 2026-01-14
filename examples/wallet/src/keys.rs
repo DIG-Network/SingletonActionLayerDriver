@@ -1,8 +1,8 @@
 //! Key derivation and synthetic key computation.
 
-use chia::bls::{PublicKey, SecretKey, DerivableKey};
-use chia::puzzles::DeriveSynthetic;
 use crate::error::{WalletError, WalletResult};
+use chia::bls::{DerivableKey, PublicKey, SecretKey};
+use chia::puzzles::DeriveSynthetic;
 use chia_puzzle_types::standard::DEFAULT_HIDDEN_PUZZLE_HASH;
 
 /// Key derivation utilities following Chia HD path standards.
@@ -107,7 +107,6 @@ impl SyntheticKey {
         Self::compute_synthetic_secret_key(&sk).to_bytes()
     }
 }
-
 
 #[cfg(test)]
 mod tests {

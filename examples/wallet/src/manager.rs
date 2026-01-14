@@ -1,10 +1,10 @@
 //! Wallet manager for creating, loading, and managing wallets.
 
-use chia::bls::{PublicKey, SecretKey};
-use crate::error::{WalletError, WalletResult};
-use crate::storage::WalletStorage;
-use crate::keys::{KeyDerivation, SyntheticKey};
 use crate::address::{Address, AddressUtils};
+use crate::error::{WalletError, WalletResult};
+use crate::keys::{KeyDerivation, SyntheticKey};
+use crate::storage::WalletStorage;
+use chia::bls::{PublicKey, SecretKey};
 
 /// Derivation path for wallet keys.
 #[derive(Debug, Clone, Copy)]
@@ -173,13 +173,12 @@ impl WalletManager {
 
         // Parse secret key
         let sk_hex = secret_key_hex.strip_prefix("0x").unwrap_or(secret_key_hex);
-        let sk_bytes = hex::decode(sk_hex)
-            .map_err(|_| WalletError::InvalidSecretKey)?;
+        let sk_bytes = hex::decode(sk_hex).map_err(|_| WalletError::InvalidSecretKey)?;
         let sk_array: [u8; 32] = sk_bytes
             .try_into()
             .map_err(|_| WalletError::InvalidSecretKey)?;
-        let secret_key = SecretKey::from_bytes(&sk_array)
-            .map_err(|_| WalletError::InvalidSecretKey)?;
+        let secret_key =
+            SecretKey::from_bytes(&sk_array).map_err(|_| WalletError::InvalidSecretKey)?;
 
         // Save encrypted wallet
         WalletStorage::save_encrypted_wallet(wallet_path.as_path(), &secret_key, passphrase)?;
@@ -237,12 +236,17 @@ mod tests {
         let manager = WalletManager::new();
 
         // In a real test, we'd use a test-specific directory
-        let wallet = manager.create_wallet("test_wallet", "test_pass", true).unwrap();
+        let wallet = manager
+            .create_wallet("test_wallet", "test_pass", true)
+            .unwrap();
 
         // Load it back
         let loaded = manager.load_wallet("test_wallet", "test_pass").unwrap();
 
-        assert_eq!(wallet.master_public_key().to_bytes(), loaded.master_public_key().to_bytes());
+        assert_eq!(
+            wallet.master_public_key().to_bytes(),
+            loaded.master_public_key().to_bytes()
+        );
     }
 
     #[test]

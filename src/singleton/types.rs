@@ -27,19 +27,21 @@ impl SingletonLineage {
     /// Convert to a Proof for use in singleton solutions
     pub fn to_proof(&self) -> Proof {
         match self {
-            SingletonLineage::Eve { launcher_parent_id, amount } => {
-                Proof::Eve(EveProof {
-                    parent_parent_coin_info: *launcher_parent_id,
-                    parent_amount: *amount,
-                })
-            }
-            SingletonLineage::Lineage { parent_coin, parent_inner_hash } => {
-                Proof::Lineage(LineageProof {
-                    parent_parent_coin_info: parent_coin.parent_coin_info,
-                    parent_inner_puzzle_hash: (*parent_inner_hash).into(),
-                    parent_amount: parent_coin.amount,
-                })
-            }
+            SingletonLineage::Eve {
+                launcher_parent_id,
+                amount,
+            } => Proof::Eve(EveProof {
+                parent_parent_coin_info: *launcher_parent_id,
+                parent_amount: *amount,
+            }),
+            SingletonLineage::Lineage {
+                parent_coin,
+                parent_inner_hash,
+            } => Proof::Lineage(LineageProof {
+                parent_parent_coin_info: parent_coin.parent_coin_info,
+                parent_inner_puzzle_hash: (*parent_inner_hash).into(),
+                parent_amount: parent_coin.amount,
+            }),
         }
     }
 

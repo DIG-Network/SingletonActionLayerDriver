@@ -1,0 +1,108 @@
+name: CI
+
+env:
+  RUST_TOOLCHAIN: "1.90.0"
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - LICENSE
+      - "**/*.gitignore"
+      - .editorconfig
+      - docs/**
+
+jobs:
+  validate-pr:
+    name: Validate PR source and version bump
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch main branch for comparison
+        run: git fetch origin main:refs/remotes/origin/main
+
+      - name: Read versions (Cargo.toml)
+        id: versions
+        shell: bash
+        run: |
+          PR_CRATE_VER=$(grep -m1 '^version\s*=\s*"' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          MAIN_CRATE_VER=$(git show origin/main:Cargo.toml | grep -m1 '^version\s*=\s*"' | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "pr_crate_ver=$PR_CRATE_VER" >> $GITHUB_OUTPUT
+          echo "main_crate_ver=$MAIN_CRATE_VER" >> $GITHUB_OUTPUT
+          echo "PR Cargo.toml version: $PR_CRATE_VER"
+          echo "Main Cargo.toml version: $MAIN_CRATE_VER"
+
+      - name: Ensure workspace/package versions match (if both present)
+        if: ${{ github.event.pull_request.base.ref == 'main' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG_VER=$(grep -m1 '^version\s*=\s*"' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/' || true)
+          WS_VER=$(awk '/^\[workspace.package\]/{f=1;next} /^\[/{f=0} f && /^version\s*=/{print; exit}' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/' || true)
+          if [ -n "${WS_VER}" ] && [ -n "${PKG_VER}" ] && [ "${WS_VER}" != "${PKG_VER}" ]; then
+            echo "[workspace.package].version (${WS_VER}) does not match [package].version (${PKG_VER}). Please keep them in sync before merging to main." >&2
+            exit 1
+          fi
+
+      - name: Ensure version increased
+        if: ${{ github.event.pull_request.base.ref == 'main' }}
+        shell: bash
+        run: |
+          cmp_versions () { [ "$1" = "$2" ] && return 1; printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1 | grep -q "^$2$"; }
+          if ! cmp_versions "${{ steps.versions.outputs.pr_crate_ver }}" "${{ steps.versions.outputs.main_crate_ver }}"; then
+            echo "Cargo.toml version must be greater in the PR than on main (current: ${{ steps.versions.outputs.pr_crate_ver }}, main: ${{ steps.versions.outputs.main_crate_ver }})." >&2
+            exit 1
+          fi
+
+  rust-checks:
+    name: Rust checks (${{ matrix.os }})
+    needs: validate-pr
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- Rust toolchain ---
+      - name: Setup Rust toolchain (pinned)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy,rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Show versions
+        shell: bash
+        run: |
+          rustc -Vv
+          cargo -V
+          echo "Running on: $(uname -a || echo windows)"
+
+      - name: Test
+        run: cargo test --all-features
+
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Fmt
+        run: cargo fmt --all -- --check

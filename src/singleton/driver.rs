@@ -12,9 +12,8 @@ use crate::error::DriverError;
 use crate::singleton::types::{LaunchResult, SingletonCoin, SingletonLineage};
 
 /// Singleton launcher puzzle hash (standard)
-pub const SINGLETON_LAUNCHER_PUZZLE_HASH: [u8; 32] = hex_literal::hex!(
-    "eff07522495060c066f66f32acc2a77e3a3e737aca8baea4d1a64ea4cdc13da9"
-);
+pub const SINGLETON_LAUNCHER_PUZZLE_HASH: [u8; 32] =
+    hex_literal::hex!("eff07522495060c066f66f32acc2a77e3a3e737aca8baea4d1a64ea4cdc13da9");
 
 /// Core driver for Action Layer singletons.
 ///
@@ -181,7 +180,7 @@ where
 
         // Update internal state
         let lineage = SingletonLineage::eve(funding_coin.coin_id(), amount);
-        self.singleton = Some(SingletonCoin::new(launcher_id, singleton_coin.clone(), lineage));
+        self.singleton = Some(SingletonCoin::new(launcher_id, singleton_coin, lineage));
 
         Ok(LaunchResult {
             launcher_id,
@@ -207,8 +206,7 @@ where
         action_puzzle: NodePtr,
         action_solution: NodePtr,
     ) -> Result<(), DriverError> {
-        let singleton = self.singleton.as_ref()
-            .ok_or(DriverError::NotLaunched)?;
+        let singleton = self.singleton.as_ref().ok_or(DriverError::NotLaunched)?;
 
         // Build action layer spend (inner puzzle + solution)
         let (inner_puzzle, inner_solution) = self.action_config.build_action_spend(
@@ -231,12 +229,14 @@ where
         )?;
 
         // Create and insert coin spend
-        let puzzle_reveal = ctx.serialize(&singleton_puzzle)
+        let puzzle_reveal = ctx
+            .serialize(&singleton_puzzle)
             .map_err(|e| DriverError::Serialize(format!("{:?}", e)))?;
-        let solution = ctx.serialize(&singleton_solution)
+        let solution = ctx
+            .serialize(&singleton_solution)
             .map_err(|e| DriverError::Serialize(format!("{:?}", e)))?;
 
-        let coin_spend = CoinSpend::new(singleton.coin.clone(), puzzle_reveal, solution);
+        let coin_spend = CoinSpend::new(singleton.coin, puzzle_reveal, solution);
         ctx.insert(coin_spend);
 
         Ok(())
@@ -248,14 +248,15 @@ where
     pub fn apply_spend(&mut self, new_state: S) {
         if let Some(singleton) = &self.singleton {
             let launcher_id = singleton.launcher_id;
-            let old_coin = singleton.coin.clone();
+            let old_coin = singleton.coin;
             let old_inner_hash = self.inner_puzzle_hash();
 
             // Update state first (needed for new puzzle hash calculation)
             self.state = new_state;
 
             // Compute new coin
-            let new_puzzle_hash: Bytes32 = self.singleton_puzzle_hash()
+            let new_puzzle_hash: Bytes32 = self
+                .singleton_puzzle_hash()
                 .expect("singleton should exist")
                 .into();
             let new_coin = Coin::new(old_coin.coin_id(), new_puzzle_hash, old_coin.amount);
@@ -282,10 +283,8 @@ where
     pub fn expected_new_coin(&self, new_state: &S) -> Option<Coin> {
         let singleton = self.singleton.as_ref()?;
         let new_inner_hash = self.inner_puzzle_hash_for_state(new_state);
-        let new_puzzle_hash: Bytes32 = SingletonArgs::curry_tree_hash(
-            singleton.launcher_id,
-            new_inner_hash,
-        ).into();
+        let new_puzzle_hash: Bytes32 =
+            SingletonArgs::curry_tree_hash(singleton.launcher_id, new_inner_hash).into();
         Some(Coin::new(
             singleton.coin.coin_id(),
             new_puzzle_hash,
@@ -311,8 +310,7 @@ where
         ctx: &mut SpendContext,
         inner_puzzle: NodePtr,
     ) -> Result<NodePtr, DriverError> {
-        let launcher_id = self.launcher_id()
-            .ok_or(DriverError::NotLaunched)?;
+        let launcher_id = self.launcher_id().ok_or(DriverError::NotLaunched)?;
 
         let singleton_mod_hash = TreeHash::new(chia_puzzles::SINGLETON_TOP_LAYER_V1_1_HASH);
         let singleton_ptr = ctx
@@ -349,7 +347,10 @@ where
 impl<S: std::fmt::Debug> std::fmt::Debug for SingletonDriver<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SingletonDriver")
-            .field("launcher_id", &self.singleton.as_ref().map(|s| hex::encode(s.launcher_id)))
+            .field(
+                "launcher_id",
+                &self.singleton.as_ref().map(|s| hex::encode(s.launcher_id)),
+            )
             .field("is_launched", &self.singleton.is_some())
             .field("state", &self.state)
             .finish()

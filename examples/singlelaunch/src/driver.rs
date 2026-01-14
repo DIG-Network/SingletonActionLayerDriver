@@ -6,13 +6,12 @@
 use chia::protocol::{Bytes32, Coin};
 use chia_wallet_sdk::driver::SpendContext;
 
-use clvm_traits::{ToClvm, FromClvm};
+use clvm_traits::{FromClvm, ToClvm};
 use clvm_utils::{CurriedProgram, ToTreeHash, TreeHash};
 
 // Import from action-layer-driver crate
 use action_layer_driver::{
-    PuzzleModule, SingletonDriver, LaunchResult,
-    spawn_child_singleton, child_singleton_puzzle_hash,
+    child_singleton_puzzle_hash, spawn_child_singleton, LaunchResult, PuzzleModule, SingletonDriver,
 };
 
 // ============================================================================
@@ -20,13 +19,15 @@ use action_layer_driver::{
 // ============================================================================
 
 /// The compiled emit_child_action.rue - curried with child_inner_puzzle_hash
-const EMIT_CHILD_ACTION_HEX: &str = include_str!("../../../puzzles/output/emit_child_action.clvm.hex");
+const EMIT_CHILD_ACTION_HEX: &str =
+    include_str!("../../../puzzles/output/emit_child_action.clvm.hex");
 
 /// The compiled child_inner_puzzle.rue (child type 1)
 const CHILD_PUZZLE_HEX: &str = include_str!("../../../puzzles/output/child_inner_puzzle.clvm.hex");
 
 /// The compiled child_inner_puzzle_2.rue (child type 2)
-const CHILD_PUZZLE_2_HEX: &str = include_str!("../../../puzzles/output/child_inner_puzzle_2.clvm.hex");
+const CHILD_PUZZLE_2_HEX: &str =
+    include_str!("../../../puzzles/output/child_inner_puzzle_2.clvm.hex");
 
 // ============================================================================
 // Application-Specific CLVM Types
@@ -52,8 +53,11 @@ impl EmitChildActionCurriedArgs {
     fn curry_tree_hash(mod_hash: TreeHash, child_inner_puzzle_hash: Bytes32) -> TreeHash {
         CurriedProgram {
             program: mod_hash,
-            args: EmitChildActionCurriedArgs { child_inner_puzzle_hash },
-        }.tree_hash()
+            args: EmitChildActionCurriedArgs {
+                child_inner_puzzle_hash,
+            },
+        }
+        .tree_hash()
     }
 }
 
@@ -163,18 +167,12 @@ impl TwoActionSingleton {
     }
 
     /// Emit a child singleton via action 1 (child_inner_puzzle)
-    pub fn emit_child_1(
-        &mut self,
-        ctx: &mut SpendContext,
-    ) -> anyhow::Result<EmitChildResult> {
+    pub fn emit_child_1(&mut self, ctx: &mut SpendContext) -> anyhow::Result<EmitChildResult> {
         self.emit_child_impl(ctx, 0, self.child_inner_1, child_inner_puzzle_hash())
     }
 
     /// Emit a child singleton via action 2 (child_inner_puzzle_2)
-    pub fn emit_child_2(
-        &mut self,
-        ctx: &mut SpendContext,
-    ) -> anyhow::Result<EmitChildResult> {
+    pub fn emit_child_2(&mut self, ctx: &mut SpendContext) -> anyhow::Result<EmitChildResult> {
         self.emit_child_impl(ctx, 1, self.child_inner_2, child_inner_puzzle_2_hash())
     }
 
@@ -186,45 +184,59 @@ impl TwoActionSingleton {
         child_inner_hash: Bytes32,
         child_inner_tree_hash: TreeHash,
     ) -> anyhow::Result<EmitChildResult> {
-        let singleton_coin = self.driver.current_coin()
+        let singleton_coin = self
+            .driver
+            .current_coin()
             .ok_or_else(|| anyhow::anyhow!("Singleton not launched"))?
             .clone();
 
         // Compute child launcher ID from current singleton
-        let child_launcher_id = self.driver.expected_child_launcher_id()
+        let child_launcher_id = self
+            .driver
+            .expected_child_launcher_id()
             .ok_or_else(|| anyhow::anyhow!("Could not compute child launcher ID"))?;
 
         // Child singleton puzzle hash
-        let child_singleton_hash = child_singleton_puzzle_hash(child_launcher_id, child_inner_tree_hash);
+        let child_singleton_hash =
+            child_singleton_puzzle_hash(child_launcher_id, child_inner_tree_hash);
 
         // Build curried action puzzle
         let emit_module = get_emit_child_action_module();
-        let action_puzzle = emit_module.curry_puzzle(
-            ctx,
-            EmitChildActionCurriedArgs { child_inner_puzzle_hash: child_inner_hash },
-        ).map_err(|e| anyhow::anyhow!("{}", e))?;
+        let action_puzzle = emit_module
+            .curry_puzzle(
+                ctx,
+                EmitChildActionCurriedArgs {
+                    child_inner_puzzle_hash: child_inner_hash,
+                },
+            )
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         // Build action solution
         let action_solution = EmitChildActionSolution {
             my_singleton_coin_id: singleton_coin.coin_id(),
             child_singleton_puzzle_hash: child_singleton_hash,
         };
-        let action_solution_ptr = ctx.alloc(&action_solution)
+        let action_solution_ptr = ctx
+            .alloc(&action_solution)
             .map_err(|e| anyhow::anyhow!("Failed to alloc action solution: {:?}", e))?;
 
         // Build singleton spend using the driver
-        self.driver.build_action_spend(ctx, action_index, action_puzzle, action_solution_ptr)
+        self.driver
+            .build_action_spend(ctx, action_index, action_puzzle, action_solution_ptr)
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         // Spawn child singleton (ephemeral launcher)
-        let child_result = spawn_child_singleton(ctx, singleton_coin.coin_id(), child_inner_tree_hash)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        let child_result =
+            spawn_child_singleton(ctx, singleton_coin.coin_id(), child_inner_tree_hash)
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         // Compute new state
         let new_state = self.driver.state().increment();
 
         // Compute new parent coin (for tracking before confirmation)
-        let new_parent_coin = self.driver.expected_new_coin(&new_state)
+        let new_parent_coin = self
+            .driver
+            .expected_new_coin(&new_state)
             .ok_or_else(|| anyhow::anyhow!("Could not compute new parent coin"))?;
 
         Ok(EmitChildResult {
