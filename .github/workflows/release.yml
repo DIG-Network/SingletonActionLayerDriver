@@ -1,7 +1,7 @@
 name: Release on push to main
 
 env:
-  RUST_TOOLCHAIN: "1.75.0"
+  RUST_TOOLCHAIN: "1.90.0"
 
 permissions:
   contents: write

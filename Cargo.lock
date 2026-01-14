@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "action-layer-driver"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chia",
  "chia-protocol",
@@ -1764,7 +1764,7 @@ dependencies = [
 
 [[package]]
 name = "l2-wallet"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "bech32 0.11.1",
@@ -2782,7 +2782,7 @@ dependencies = [
 
 [[package]]
 name = "singlelaunch"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "action-layer-driver",
  "anyhow",
