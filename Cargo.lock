@@ -6,6 +6,7 @@ version = 4
 name = "action-layer-driver"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "chia",
  "chia-protocol",
  "chia-puzzles",
@@ -16,6 +17,7 @@ dependencies = [
  "hex",
  "hex-literal",
  "thiserror 2.0.17",
+ "tokio",
 ]
 
 [[package]]
@@ -1775,6 +1777,7 @@ dependencies = [
  "chia-puzzle-types",
  "chia-sdk-test",
  "chia-wallet-sdk",
+ "clvmr",
  "dirs",
  "hex",
  "rand",

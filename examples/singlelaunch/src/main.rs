@@ -26,11 +26,7 @@ use clvmr::Allocator;
 use datalayer_driver::Signature as DLSignature;
 use datalayer_driver::async_api as dl;
 
-use driver::{
-    TwoActionConfig, ActionState,
-    create_singleton_spend, build_emit_child_spend,
-    create_eve_proof, create_lineage_proof,
-};
+use driver::{TwoActionSingleton, ActionState};
 
 type StandardArgs = chia::puzzles::standard::StandardArgs;
 
@@ -177,12 +173,12 @@ async fn test_two_actions(testnet: bool, wallet_name: &str, fee: u64, password: 
     let standard_layer = StandardLayer::new(derived_pk.clone());
     let wallet_puzzle_hash: Bytes32 = standard_layer.tree_hash().into();
 
-    // Create action layer config
-    let config = TwoActionConfig::new(wallet_puzzle_hash);
+    // Create two-action singleton driver
     let initial_state = ActionState::new(1, 0xDEADBEEF);
+    let mut singleton = TwoActionSingleton::new(wallet_puzzle_hash, initial_state);
 
-    println!("  Child inner 1: 0x{}...", &hex::encode(config.child_inner_1.to_bytes())[..16]);
-    println!("  Child inner 2: 0x{}...", &hex::encode(config.child_inner_2.to_bytes())[..16]);
+    println!("  Child inner 1: 0x{}...", &hex::encode(singleton.child_inner_1().to_bytes())[..16]);
+    println!("  Child inner 2: 0x{}...", &hex::encode(singleton.child_inner_2().to_bytes())[..16]);
 
     // Connect
     let peer = connect_peer(testnet).await?;
@@ -220,9 +216,12 @@ async fn test_two_actions(testnet: bool, wallet_name: &str, fee: u64, password: 
 
     let ctx = &mut SpendContext::new();
 
-    let (launcher_id, singleton_coin, launcher_conditions) = create_singleton_spend(
-        ctx, &funding_coin, &config, initial_state, singleton_amount
-    ).map_err(|e| Error::Transaction(format!("{:?}", e)))?;
+    let launch_result = singleton.launch(ctx, &funding_coin, singleton_amount)
+        .map_err(|e| Error::Transaction(format!("{:?}", e)))?;
+
+    let launcher_id = launch_result.launcher_id;
+    let singleton_coin = launch_result.coin.clone();
+    let launcher_conditions = launch_result.conditions;
 
     println!("  Launcher ID: 0x{}", hex::encode(launcher_id.to_bytes()));
 
@@ -258,11 +257,9 @@ async fn test_two_actions(testnet: bool, wallet_name: &str, fee: u64, password: 
 
     let ctx = &mut SpendContext::new();
 
-    let eve_proof = create_eve_proof(funding_coin.coin_id(), singleton_amount);
-
-    let emit_result_1 = build_emit_child_spend(
-        ctx, &singleton_coin, launcher_id, &config, initial_state, eve_proof, true
-    ).map_err(|e| Error::Transaction(format!("{:?}", e)))?;
+    // The singleton driver handles proofs internally
+    let emit_result_1 = singleton.emit_child_1(ctx)
+        .map_err(|e| Error::Transaction(format!("{:?}", e)))?;
 
     println!("  Child 1 ID: 0x{}...", &hex::encode(emit_result_1.child_singleton.coin_id().to_bytes())[..16]);
 
@@ -292,6 +289,9 @@ async fn test_two_actions(testnet: bool, wallet_name: &str, fee: u64, password: 
     wait_for_coin_confirmation(&peer, emit_result_1.child_singleton.puzzle_hash, emit_result_1.child_singleton.coin_id(), genesis, "Child 1").await?;
     println!("  {} Child 1 emitted!", style("OK").green().bold());
 
+    // Apply the state change to update internal tracking
+    singleton.apply_spend(emit_result_1.new_state);
+
     // =========================================================================
     // STEP 3: Emit child 2 via action 2
     // =========================================================================
@@ -300,11 +300,9 @@ async fn test_two_actions(testnet: bool, wallet_name: &str, fee: u64, password: 
 
     let ctx = &mut SpendContext::new();
 
-    let lineage_proof = create_lineage_proof(&singleton_coin, config.compute_inner_hash(initial_state));
-
-    let emit_result_2 = build_emit_child_spend(
-        ctx, &emit_result_1.new_parent_coin, launcher_id, &config, emit_result_1.new_state, lineage_proof, false
-    ).map_err(|e| Error::Transaction(format!("{:?}", e)))?;
+    // The singleton driver handles proofs internally after apply_spend()
+    let emit_result_2 = singleton.emit_child_2(ctx)
+        .map_err(|e| Error::Transaction(format!("{:?}", e)))?;
 
     println!("  Child 2 ID: 0x{}...", &hex::encode(emit_result_2.child_singleton.coin_id().to_bytes())[..16]);
 

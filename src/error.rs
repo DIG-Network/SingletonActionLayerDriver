@@ -27,4 +27,25 @@ pub enum DriverError {
 
     #[error("Launcher error: {0}")]
     Launcher(String),
+
+    #[error("Singleton not yet launched")]
+    NotLaunched,
+
+    #[error("Singleton already launched")]
+    AlreadyLaunched,
+
+    #[error("Singleton has been melted (destroyed)")]
+    Melted,
+
+    #[error("Action failed: {0}")]
+    ActionFailed(String),
+
+    #[error("Broadcast failed: {0}")]
+    Broadcast(String),
+
+    #[error("Confirmation timeout")]
+    ConfirmationTimeout,
+
+    #[error("Network error: {0}")]
+    Network(String),
 }

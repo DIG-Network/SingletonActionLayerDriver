@@ -1,10 +1,46 @@
+[package]
+name = "action-layer-driver"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75.0"
+description = "Generic driver for Action Layer (CHIP-0050) singleton spend construction on Chia"
+license = "MIT"
+authors = ["DIG Network"]
+repository = "https://github.com/dig-network/action-layer-driver"
+keywords = ["chia", "blockchain", "singleton", "action-layer", "CHIP-0050"]
+categories = ["cryptography::cryptocurrencies"]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# Chia SDK
+chia = "0.26"
+chia-wallet-sdk = { version = "0.30", features = ["action-layer"] }
+chia-puzzles = "0.20"
+chia-protocol = "0.26"
+
+# CLVM
+clvm-traits = "0.26"
+clvm-utils = "0.26"
+clvmr = "0.14"
+
+# Encoding
+hex = "0.4"
+hex-literal = "0.4"
+
+# Error handling
+thiserror = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+anyhow = "1.0"
+
 [workspace]
 members = [
-    "crates/wallet",
-    "crates/action-layer-driver",
-    "apps/singlelaunch",
+    "examples/singlelaunch",
+    "examples/wallet",
 ]
-resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
@@ -14,21 +50,22 @@ license = "MIT"
 authors = ["DIG Network"]
 
 [workspace.dependencies]
-# Chia SDK - using 0.26/0.30 for datalayer-driver 3.0.0 compatibility
+# Re-export main crate for examples
+action-layer-driver = { path = "." }
+
+# Chia SDK
 chia = "0.26"
 chia-wallet-sdk = { version = "0.30", features = ["action-layer"] }
 chia-sdk-test = "0.30"
-
-# Chia types and crypto (0.26 for datalayer-driver compatibility)
+chia-puzzles = "0.20"
 chia-bls = "0.26"
 chia-protocol = "0.26"
 chia-puzzle-types = "0.26"
 
-# CLVM and puzzles (matching datalayer-driver deps)
+# CLVM
 clvmr = "0.14"
 clvm-traits = "0.26"
 clvm-utils = "0.26"
-chia-puzzles = "0.20"
 
 # Crypto and encoding
 hex = "0.4"
@@ -66,6 +103,3 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Peer connections
 datalayer-driver = "3"
-
-# Local crates
-action-layer-driver = { path = "crates/action-layer-driver" }

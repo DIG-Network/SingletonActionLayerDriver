@@ -20,6 +20,9 @@ chia-bls = { workspace = true }
 chia-protocol = { workspace = true }
 chia-puzzle-types = { workspace = true }
 
+# CLVM
+clvmr = { workspace = true }
+
 # Crypto and encoding
 hex = { workspace = true }
 sha2 = { workspace = true }

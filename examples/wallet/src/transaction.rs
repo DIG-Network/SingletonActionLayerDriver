@@ -35,10 +35,9 @@ impl TransactionSigner {
         context: &SigningContext,
     ) -> WalletResult<Signature> {
         use chia::bls::sign;
-        use chia_wallet_sdk::prelude::{
-            AggSigConstants, RequiredSignature, MAINNET_CONSTANTS, TESTNET11_CONSTANTS,
-        };
-        use chia_wallet_sdk::clvmr::Allocator;
+        use chia_wallet_sdk::signer::{AggSigConstants, RequiredSignature};
+        use chia_wallet_sdk::types::{MAINNET_CONSTANTS, TESTNET11_CONSTANTS};
+        use clvmr::Allocator;
         use std::collections::HashMap;
 
         // Use correct constants based on network
